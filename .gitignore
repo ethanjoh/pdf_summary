@@ -1,0 +1,29 @@
+# Environment Variables (API Keys)
+.env
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*.class
+*.so
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# Output and Data Directories
+output/
+sample_pdfs/
+*.pdf
+
+# IDE & Editor configs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
