@@ -61,6 +61,33 @@ def test_series_parsing():
     print("   -> 시리즈 파일명 파싱 테스트 통과!")
 
 
+def test_bold_spacing():
+    print("\n--- [마크다운 볼드(** **) 뒤 공백 자동 보정(ensure_bold_spacing) 테스트] ---")
+    from summarizer import ensure_bold_spacing
+
+    test_cases = [
+        # (입력, 기대값)
+        ("**도서명**: 책제목", "**도서명** : 책제목"),
+        ("**‘왼쪽 페이지’**이라는 설명", "**‘왼쪽 페이지’** 이라는 설명"),
+        ("**핵심 키워드**는 매우 중요하다.", "**핵심 키워드** 는 매우 중요하다."),
+        ("**SEO Title** : 이미 공백 있음", "**SEO Title** : 이미 공백 있음"),
+        ("> **💡 핵심 한 줄 요약**: 문장", "> **💡 핵심 한 줄 요약** : 문장"),
+        ("1. **[포인트 1]**: 첫 번째", "1. **[포인트 1]** : 첫 번째"),
+        ("**Q1. 질문인가요?**\n- **A**: 답변", "**Q1. 질문인가요?**\n- **A** : 답변"),
+        (
+            "본문 **강조**입니다.\n```mermaid\ngraph TD\n    A[\"**노드**입니다\"] --> B\n```\n하단 **강조**입니다.",
+            "본문 **강조** 입니다.\n```mermaid\ngraph TD\n    A[\"**노드**입니다\"] --> B\n```\n하단 **강조** 입니다."
+        ),
+    ]
+
+    for inp, expected in test_cases:
+        actual = ensure_bold_spacing(inp)
+        assert actual == expected, f"보정 실패!\n입력: {inp}\n실제: {actual}\n기대: {expected}"
+        print(f"   [OK] '{inp[:25]}...' -> '{actual[:25]}...'")
+
+    print("   -> 마크다운 볼드(** **) 공백 보정 단위 테스트 전체 통과!")
+
+
 def test_pdf_processor():
     import shutil
     test_dir = Path("./test_workspace")
@@ -70,6 +97,9 @@ def test_pdf_processor():
 
     # 1. 파싱 단위 테스트
     test_series_parsing()
+
+    # 2. 마크다운 볼드 공백 보정 테스트
+    test_bold_spacing()
 
     print("\n--- [시리즈물 그룹화 및 1권 커버 캡처 테스트] ---")
     # 샘플 파일 생성
