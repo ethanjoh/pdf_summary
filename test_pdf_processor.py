@@ -88,6 +88,96 @@ def test_bold_spacing():
     print("   -> 마크다운 볼드(** **) 공백 보정 단위 테스트 전체 통과!")
 
 
+def test_mermaid_optimization():
+    print("\n--- [Mermaid 다이어그램 가독성 및 4대 구문 오류 자동 보정 테스트] ---")
+    from summarizer import optimize_mermaid_diagram, postprocess_markdown
+
+    # 1. 특수 공백(\u00a0) 치환 검증
+    nbsp_sample = "```mermaid\ngraph\u00a0TD\n\u00a0\u00a0\u00a0\u00a0A[\"노드 A\"] --> B[\"노드 B\"]\n```"
+    opt_nbsp = optimize_mermaid_diagram(nbsp_sample)
+    assert "\u00a0" not in opt_nbsp, "특수 공백(\\u00a0)이 제거되지 않았습니다."
+    print("   [OK] 1. 특수 공백(\\u00a0) -> 일반 ASCII 공백 자동 치환 확인")
+
+    # 2. subgraph 식별자 오류 자동 보정 검증
+    subgraph_sample = (
+        "```mermaid\n"
+        "graph TD\n"
+        "    subgraph Phase 1: 기획 단계\n"
+        "        A[\"노드 A\"]\n"
+        "    end\n"
+        "    subgraph 가족 및 친족\n"
+        "        B[\"노드 B\"]\n"
+        "    end\n"
+        "```"
+    )
+    opt_sub = optimize_mermaid_diagram(subgraph_sample)
+    assert 'subgraph sub_1 ["Phase 1: 기획 단계"]' in opt_sub
+    assert 'subgraph sub_2 ["가족 및 친족"]' in opt_sub
+    print("   [OK] 2. subgraph 식별자 공백/한글/콜론 오류 -> sub_N [\"...\"] 자동 변환 확인")
+
+    # 3. 노드 라벨 큰따옴표 누락 보정 검증
+    node_quote_sample = (
+        "```mermaid\n"
+        "graph TD\n"
+        "    A[김수헌: 글로벌모니터 대표/기자] --> B[\"이미 따옴표 있음\"]\n"
+        "```"
+    )
+    opt_node = optimize_mermaid_diagram(node_quote_sample)
+    assert 'A["김수헌: 글로벌모니터 대표/기자"]' in opt_node
+    assert 'B["이미 따옴표 있음"]' in opt_node
+    print("   [OK] 3. 노드 라벨 특수문자 따옴표 누락 -> [\"...\"] 자동 보정 확인")
+
+    # 4. 연결선 비표준 문법 및 따옴표 누락 보정 검증
+    arrow_sample = (
+        "```mermaid\n"
+        "graph TD\n"
+        "    A -.양자.-> B\n"
+        "    A -->|대립/갈등| C\n"
+        "    B -.- |협력 관계| C\n"
+        "```"
+    )
+    opt_arrow = optimize_mermaid_diagram(arrow_sample)
+    assert 'A -.->|"양자"| B' in opt_arrow
+    assert 'A -->|"대립/갈등"| C' in opt_arrow
+    assert 'B -.- |"협력 관계"| C' in opt_arrow
+    print("   [OK] 4. 비표준 점선(-.라벨.->) 및 파이프 라벨 따옴표 누락 자동 보정 확인")
+
+    # 5. %%{init:}%% 고시인성 테마 지시문 및 graph TD 전환 검증
+    sample_mermaid = (
+        "## 다이어그램\n"
+        "```mermaid\n"
+        "graph LR\n"
+        "    A[\"인물 A\"] --> B[\"인물 B\"]\n"
+        "```\n"
+        "**설명**입니다."
+    )
+    optimized = optimize_mermaid_diagram(sample_mermaid)
+    assert "primaryTextColor': '#0F172A'" in optimized, "Mermaid primaryTextColor 설정이 추가되지 않았습니다."
+    assert "graph TD" in optimized, "graph LR이 graph TD로 전환되지 않았습니다."
+    print("   [OK] 5. %%{init:...}%% 고시인성 테마 지시문 자동 추가 및 graph TD 전환 확인")
+
+    # 6. postprocess_markdown 종합 검증 (볼드 공백 + Mermaid 4대 오류 + 고시인성 테마 동시 적용)
+    combined_sample = (
+        "**도서명**: 80/20 법칙\n"
+        "```mermaid\n"
+        "graph LR\n"
+        "    subgraph 핵심 원리: 80대 20\n"
+        "        A[투입: 20%의 원인] -.결과 도출.-> B[산출: 80%의 성과]\n"
+        "    end\n"
+        "```\n"
+        "**결론**입니다."
+    )
+    result = postprocess_markdown(combined_sample)
+    assert "**도서명** : 80/20 법칙" in result
+    assert "**결론** 입니다." in result
+    assert "graph TD" in result
+    assert "primaryTextColor': '#0F172A'" in result
+    assert 'subgraph sub_1 ["핵심 원리: 80대 20"]' in result
+    assert 'A["투입: 20%의 원인"] -.->|"결과 도출"| B["산출: 80%의 성과"]' in result
+    print("   [OK] 6. postprocess_markdown 종합 후처리(볼드 공백 + 4대 오류 보정 + 고시인성 테마) 완벽 동작 확인")
+    print("   -> Mermaid 다이어그램 가독성 및 4대 구문 오류 자동 보정 테스트 전체 통과!")
+
+
 def test_pdf_processor():
     import shutil
     test_dir = Path("./test_workspace")
@@ -100,6 +190,9 @@ def test_pdf_processor():
 
     # 2. 마크다운 볼드 공백 보정 테스트
     test_bold_spacing()
+
+    # 3. Mermaid 다이어그램 가독성 최적화 테스트
+    test_mermaid_optimization()
 
     print("\n--- [시리즈물 그룹화 및 1권 커버 캡처 테스트] ---")
     # 샘플 파일 생성

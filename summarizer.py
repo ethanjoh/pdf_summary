@@ -39,6 +39,109 @@ def ensure_bold_spacing(text: str) -> str:
     return "```".join(parts)
 
 
+# Mermaid 고시인성(High-Contrast) 라이트 테마 설정 상수
+MERMAID_HIGH_CONTRAST_INIT = (
+    "%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#F0F7FF', "
+    "'primaryTextColor': '#0F172A', 'primaryBorderColor': '#2563EB', 'lineColor': '#334155', "
+    "'secondaryColor': '#FEF3C7', 'tertiaryColor': '#F0FDF4', 'edgeLabelBackground': '#FFFFFF', 'fontSize': '14px'}}}%%"
+)
+
+
+def optimize_mermaid_diagram(text: str) -> str:
+    """
+    마크다운 내 ```mermaid 코드 블록의 문법 오류를 방지하고 시인성을 최적화합니다:
+    1. 보이지 않는 특수 공백(\u00a0 등)을 일반 공백으로 치환
+    2. 가로로 비대해져 글씨가 축소되는 것을 막기 위해 graph LR/RL을 graph TD로 전환
+    3. subgraph 식별자 오류 자동 보정: `subgraph Phase 1: 시작` -> `subgraph sub_1 ["Phase 1: 시작"]`
+    4. 노드 라벨 큰따옴표 누락 보정: `ID[내용: 설명]` -> `ID["내용: 설명"]`
+    5. 연결선(화살표) 비표준 문법 및 따옴표 누락 자동 보정:
+       - `-.라벨.->` -> `-.->|"라벨"|`
+       - `-->|라벨|` -> `-->|"라벨"|`
+       - `-.->|라벨|` -> `-.->|"라벨"|`
+       - `-.- |라벨|` -> `-.- |"라벨"|`
+    6. 고시인성(소프트 배경 + 진한 다크 텍스트 #0F172A) 테마 지시문 자동 적용
+    """
+    if not text:
+        return ""
+
+    # 1. 특수 공백 치환
+    text = text.replace('\u00a0', ' ')
+
+    def fix_mermaid_block(match):
+        block = match.group(1).strip()
+        lines = block.split("\n")
+        new_lines = []
+        subgraph_counter = 1
+
+        for line in lines:
+            stripped = line.strip()
+
+            # (1) graph LR / graph RL -> graph TD 변환
+            if stripped.startswith("graph LR") or stripped.startswith("graph RL") or stripped.startswith("flowchart LR") or stripped.startswith("flowchart RL"):
+                line = re.sub(r'(graph|flowchart)\s+(LR|RL)', r'\1 TD', line)
+                new_lines.append(line)
+                continue
+
+            # (2) subgraph 식별자 오류 자동 보정
+            m_sub = re.match(r'^(\s*subgraph\s+)(.+)$', line, re.IGNORECASE)
+            if m_sub:
+                prefix = m_sub.group(1)
+                rest = m_sub.group(2).strip()
+                # 이미 올바른 영문ID ["..."] 형태인 경우
+                if re.match(r'^[a-zA-Z0-9_]+\s*\["[^"\n]+"\]$', rest):
+                    new_lines.append(line)
+                # 영문ID [라벨] (따옴표 누락) 형태인 경우: 예) Chapter_Flow [프레임워크]
+                elif re.match(r'^([a-zA-Z0-9_]+)\s*\[([^"\n]+)\]$', rest):
+                    m_label = re.match(r'^([a-zA-Z0-9_]+)\s*\[([^"\n]+)\]$', rest)
+                    new_lines.append(f'{prefix}{m_label.group(1)} ["{m_label.group(2).strip()}"]')
+                # 식별자 자체에 공백이나 특수문자가 들어간 경우: 예) Phase 1: 기획 또는 가족 및 친족
+                else:
+                    clean_label = rest.strip(' "\'[]')
+                    new_lines.append(f'{prefix}sub_{subgraph_counter} ["{clean_label}"]')
+                    subgraph_counter += 1
+                continue
+
+            # (3) 연결선(화살표) 비표준 문법 및 따옴표 보정
+            # 비표준 점선 라벨: -.라벨.-> -> -.->|"라벨"|
+            line = re.sub(r'-\.([^"\n\-]+?)\.->', r'-.->|"\1"|', line)
+            # 비표준 무방향 점선: .- 라벨 -. 또는 -.- "라벨" -.- -> -.- |"라벨"|
+            line = re.sub(r'\.-\s*([^"\n\-]+?)\s*-\.', r'-.- |"\1"|', line)
+            line = re.sub(r'-\.-\s*"([^"\n]+?)"\s*-\.-', r'-.- |"\1"|', line)
+            # 파이프 라벨 내 따옴표 누락 보정: -->|라벨| -> -->|"라벨"|
+            line = re.sub(r'(-->|-\.->|-\.-\s*)\|(?!")([^|\n]+?)(?<!")\|', r'\1|"\2"|', line)
+
+            # (4) 노드 라벨 따옴표 누락 보정: ID[텍스트] -> ID["텍스트"]
+            # 단, 이미 ["..."] 형태가 아닌 경우만 변환
+            line = re.sub(r'(\b[a-zA-Z0-9_]+\s*)\[(?!")([^\[\]\n]+?)(?<!")\]', r'\1["\2"]', line)
+
+            new_lines.append(line)
+
+        joined = "\n".join(new_lines)
+        # (5) 고시인성 테마 지시문 확인 및 교체/추가
+        if re.search(r'%%\s*\{\s*init\s*:.*?%%', joined, re.DOTALL | re.IGNORECASE):
+            joined = re.sub(r'%%\s*\{\s*init\s*:.*?%%\n?', f"{MERMAID_HIGH_CONTRAST_INIT}\n", joined, flags=re.DOTALL | re.IGNORECASE)
+        else:
+            joined = f"{MERMAID_HIGH_CONTRAST_INIT}\n{joined}"
+
+        return f"```mermaid\n{joined}\n```"
+
+    return re.sub(r'```mermaid\s*\n([\s\S]*?)\n```', fix_mermaid_block, text)
+
+
+def postprocess_markdown(text: str) -> str:
+    """
+    생성된 마크다운 본문의 렌더링 최적화를 위한 종합 후처리 함수:
+    - 볼드(** **) 강조 구문 뒤 공백 자동 보정
+    - Mermaid 다이어그램 고시인성 테마(밝은 배경 + 진한 글씨) 및 세로형(TD) 구조 최적화
+    - Mermaid 4대 구문 오류(특수공백, subgraph 식별자, 따옴표 누락, 비표준 연결선) 자동 보정
+    """
+    if not text:
+        return ""
+    text = ensure_bold_spacing(text)
+    text = optimize_mermaid_diagram(text)
+    return text
+
+
 SUMMARY_PROMPT_TEMPLATE = """
 당신은 베스트셀러 도서 전문 서평가이자 독서 마케팅 및 SEO/AEO(검색 및 AI 엔진 최적화) 전문가입니다.
 제공된 도서(PDF) 내용을 깊이 있게 분석한 후, 독자들이 책을 당장 구매하거나 펼쳐보고 싶어지도록 유도하는 최고 품질의 블로그 리뷰/서평 마크다운 포스팅을 작성해 주세요.
@@ -50,19 +153,27 @@ SUMMARY_PROMPT_TEMPLATE = """
 1. **[소설 / 이야기 / 문학 도서의 경우]**
    - **줄거리 & 서스펜스** : 단순 요약이 아니라 영화 예고편처럼 사건의 발단, 인물들의 팽팽한 대립과 심리전, 위기 상황을 생생하고 흡입력 있게 서술하세요.
    - **스포일러 엄격 금지** : 결말, 최종 범인/진실, 핵심 반전은 절대로 누설하지 마세요. 클라이맥스 직전의 최고조 긴장감 상태에서 강렬한 의문과 여운을 남겨야 합니다.
-   - **시각화** : 주요 인물들의 갈등과 관계를 보여주는 '등장인물 관계도' Mermaid 다이어그램 작성.
+   - **시각화 (인물 관계도)** : 이야기의 핵심 축을 이루는 주요 인물 4~6명의 갈등/협력 관계를 보여주는 세로형(graph TD) Mermaid 다이어그램 작성. (모든 조연을 나열하지 말고 핵심 대립 구도에 집중)
 
 2. **[경제경영 / 과학 / 인문 / 자기계발 / 실용서 등 비문학 도서의 경우]**
    - **핵심 통찰 & 문제의식** : 저자가 던지는 시대적 화두와 문제의식, 기존 상식을 뒤흔드는 혁신적 아이디어/이론을 명쾌하고 흥미진진하게 제시하세요.
    - **풍부한 사례 & 프레임워크** : 책 속의 흥미로운 실제 사례, 과학적 발견, 비즈니스 전략이나 핵심 실행 원리를 독자의 지적 호기심을 자극하도록 서술하세요.
-   - **시각화** : 책의 핵심 이론 구조, 문제 해결 프레임워크, 또는 개념 체계도를 보여주는 '핵심 개념/프레임워크' Mermaid 다이어그램 작성.
+   - **시각화 (핵심 프레임워크)** : 책의 핵심 4~6개 이론 구조 또는 단계별 실행 프로세스를 보여주는 세로형(graph TD) Mermaid 다이어그램 작성.
 
 ---
 
 ## 📌 출력 형식 요구사항 (Markdown 포맷)
 
 아래 마크다운 구조를 정확히 준수하여 작성해 주세요.
-※ [마크다운 렌더링 필수 규칙] 본문에서 굵은 글씨(**강조 텍스트**)를 작성할 때는 마크다운 파서 렌더링 오류를 방지하기 위해 닫는 ** 뒤에 반드시 한 칸 공백(띄어쓰기)을 넣으세요. (예: **핵심 통찰** 은 O, **핵심 통찰**은 X / **도서명** : O, **도서명**: X)
+※ [마크다운 및 Mermaid 필수 문법 규칙 (오류 방지 및 고시인성 필독)]
+1. **강조 구문 공백** : 본문에서 굵은 글씨(**강조 텍스트**) 작성 시 닫는 ** 뒤에 반드시 한 칸 공백을 넣으세요. (예: **핵심 통찰** 은 O, **도서명** : O)
+2. **Mermaid 4대 구문 오류 방지 규칙 (Syntax Error 방지)** :
+   - ① **특수 공백 금지** : 일반 ASCII 공백만 사용하세요. (웹 특수 공백 \\u00a0 절대 금지)
+   - ② **subgraph 식별자** : 반드시 `subgraph 영문ID ["표시할 이름"]` 형식을 사용하세요. 식별자 자체에 한글, 공백, 콜론(:), 앰퍼샌드(&), 대괄호([])를 직접 쓰면 구문 오류가 발생합니다. (예: `subgraph SUB1 ["가족 및 친족"]`)
+   - ③ **노드 & 라벨 큰따옴표 필수** : 특수문자(/, :, ', &, ·, 줄바꿈 태그)로 인한 파서 충돌을 막기 위해 노드는 반드시 `ID["텍스트"]`, 화살표 라벨은 `-->|"텍스트"|`처럼 큰따옴표로 감싸세요.
+   - ④ **표준 연결선 문법** : 실선 화살표 `A -->|"라벨"| B`, 점선 화살표 `A -.->|"라벨"| B` (비표준 `-.라벨.->` 금지), 무방향 점선 `A -.- |"라벨"| B`를 준수하세요.
+3. **Mermaid 고시인성 테마 & 가독성** : 세로형(`graph TD`), 핵심 노드 5~7개 이내 압축, 관계 라벨 2~4자 축약, 맨 윗줄 고시인성 테마 지시문 필수 선언:
+   `%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#F0F7FF', 'primaryTextColor': '#0F172A', 'primaryBorderColor': '#2563EB', 'lineColor': '#334155', 'secondaryColor': '#FEF3C7', 'tertiaryColor': '#F0FDF4', 'edgeLabelBackground': '#FFFFFF', 'fontSize': '14px'}}}%%`
 
 ---
 
@@ -87,8 +198,14 @@ SUMMARY_PROMPT_TEMPLATE = """
 
 ## 2. 🧩 핵심 구조 및 시각적 다이어그램 (Mermaid Diagram)
 - **핵심 구성 안내** : [소설인 경우 '주요 등장인물 관계', 비문학인 경우 '핵심 이론/개념 체계도' 요약]
-- **Mermaid 다이어그램** :
-  (반드시 유효한 ```mermaid ... ``` 블록으로 작성. 소설은 인물 간 갈등/협력 관계(graph TD), 비문학은 핵심 개념 흐름/구조도(graph TD 또는 graph LR)로 표현)
+- **Mermaid 다이어그램 (고시인성 세로형 구조)** :
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#F0F7FF', 'primaryTextColor': '#0F172A', 'primaryBorderColor': '#2563EB', 'lineColor': '#334155', 'secondaryColor': '#FEF3C7', 'tertiaryColor': '#F0FDF4', 'edgeLabelBackground': '#FFFFFF', 'fontSize': '14px'}}}%%
+graph TD
+    A["핵심 주체/인물 A"] -->|"갈등"| B["대립 대상/인물 B"]
+    A -->|"협력"| C["조력자 C"]
+    B -->|"추적"| D["수사관 D"]
+```
 
 ## 3. 💡 핵심 내용 & 흥미진진한 탐구 (※ 스포일러 없음!)
 - **이야기의 시작 / 저자의 핵심 질문 (도입)** : 사건의 발단 또는 저자가 제기하는 충격적인 문제의식
@@ -351,8 +468,8 @@ class PDFSummarizer:
                     series_notice=series_notice
                 )
 
-            # 5. 마크다운 파일 저장 (강조 구문 공백 자동 보정 적용)
-            markdown_content = ensure_bold_spacing(markdown_content)
+            # 5. 마크다운 파일 저장 (강조 구문 공백 및 Mermaid 가독성 자동 보정 적용)
+            markdown_content = postprocess_markdown(markdown_content)
             output_md_path.parent.mkdir(parents=True, exist_ok=True)
             with open(output_md_path, "w", encoding="utf-8") as f:
                 f.write(markdown_content)
@@ -439,7 +556,7 @@ class PDFSummarizer:
             )
 
             response = self._generate_content_with_retry(contents=[merge_prompt])
-            return ensure_bold_spacing(response.text or "")
+            return postprocess_markdown(response.text or "")
 
         finally:
             # 임시 분할 파일 정리

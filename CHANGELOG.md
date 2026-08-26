@@ -1,30 +1,37 @@
 # CHANGELOG
 
-## [2026-08-26] - 마크다운 볼드 강조 구문(** **) 뒤 공백 보정 및 렌더링 최적화
+## [2026-08-26] - Mermaid 4대 구문 오류(Syntax Error) 원천 차단 & 가독성 최적화
 
 ### 변경 목적
-- 마크다운 파서 및 블로그 플랫폼(티스토리, 네이버 블로그 등)에서 `**강조**` 구문 뒤에 공백 없이 한글 조사나 기호가 바로 붙을 경우(예: `**키워드**는`, `**도서명**:`) 볼드 서식이 정상 렌더링되지 않고 기호가 그대로 노출되는 문제를 해결.
+- **Mermaid 4대 구문 오류 해결**: 
+  1. 보이지 않는 웹 특수 공백(`\u00a0`)으로 인한 파서 에러
+  2. `subgraph` 식별자에 한글/공백/콜론(`:`) 직접 작성으로 인한 파싱 에러
+  3. 노드 및 라벨의 특수문자(`/`, `:`, `'`, `&`, `·`)에 큰따옴표(`"..."`) 누락으로 인한 기호 오인 에러
+  4. 비표준 점선 화살표(`-.라벨.->`, `.- ... -.`)로 인한 구문 에러
+- **Mermaid 가독성 저하 및 볼드 공백 해결**: 과도하게 가로로 넓어져 폰트가 쌀알처럼 축소되는 문제 및 마크다운 볼드(`** **`) 뒤 공백 누락 해결.
 
 ### 주요 결정 사항
-1. **AI 프롬프트 지침 보강 (`summarizer.py`)**:
-   - `SUMMARY_PROMPT_TEMPLATE`, `PARTIAL_SUMMARY_PROMPT`, `MERGE_SUMMARY_PROMPT`에 `**강조**` 닫는 기호 뒤 반드시 한 칸 공백(띄어쓰기)을 넣도록 지침 명시.
-   - 프롬프트 템플릿 내 기본 예시 문구(`**도서명** :`, `**저자/역자** :` 등) 통일.
-2. **마크다운 후처리 자동 보정 (`ensure_bold_spacing`)**:
-   - Mermaid 다이어그램 및 코드 블록(```...```) 내부는 온전히 보존하고, 일반 텍스트 영역의 `**강조**` 바로 뒤에 공백이 없는 패턴(`(?<!\*)\*\*([^\n*]+?)\*\*(?!\*)([^\s\n*])`)을 정규식으로 자동 탐지하여 `**\1** \2`로 공백 삽입.
-   - `summarize_series_to_markdown` 및 `_summarize_chunked`에서 파일 저장 전 자동 보정 적용.
-3. **기존 마크다운 파일 87개 일괄 보정 (`output/`)**:
-   - 기존 생성된 `*_review.md` 도서 리뷰 마크다운 파일들에 대해 동일한 공백 보정을 일괄 적용하여 기존 산출물의 볼드 렌더링 정상화.
+1. **AI 프롬프트 Mermaid 4대 오류 방지 규칙 강화 (`summarizer.py`)**:
+   - `SUMMARY_PROMPT_TEMPLATE`에 공백 규칙, `subgraph 영문ID ["표시명"]` 규칙, 노드 `ID["텍스트"]` 및 라벨 `-->|"텍스트"|` 큰따옴표 필수 규칙, 표준 연결선 문법 명시.
+2. **후처리 함수 `optimize_mermaid_diagram` 4대 오류 정규식 자동 보정 (`summarizer.py`)**:
+   - `\u00a0` $\rightarrow$ 일반 ASCII 공백 자동 치환
+   - `subgraph` 식별자 공백/한글/콜론 $\rightarrow$ `subgraph sub_N ["..."]` 자동 변환
+   - 노드 라벨 큰따옴표 누락 $\rightarrow$ `ID["..."]` 자동 래핑
+   - 비표준 점선(`-.라벨.->`) $\rightarrow$ `-.->|"라벨"|` 및 파이프 라벨 따옴표 누락 자동 보정
+   - `graph LR/RL` $\rightarrow$ 세로형 `graph TD` 전환 및 고시인성 테마(`primaryColor: #F0F7FF`, `primaryTextColor: #0F172A`, `lineColor: #334155`, `edgeLabelBackground: #FFFFFF`) 지시문 자동 적용
+3. **기존 마크다운 파일 90개 일괄 보정 (`output/`)**:
+   - `output/` 폴더 내 기존 마크다운 파일들의 Mermaid 다이어그램에 4대 오류 보정 및 고시인성 테마를 일괄 적용.
 4. **단위 테스트 추가 및 검증 (`test_pdf_processor.py`)**:
-   - 조사 결합, 기호, 코드 블록 보호 등 다양한 케이스에 대한 정규식 보정 단위 테스트 추가.
+   - 4대 오류 패턴, 고시인성 테마 및 복합 케이스에 대한 단위 테스트(`test_mermaid_optimization`) 전체 통과 확인.
 
 ### 수정한/생성한 파일
-- `summarizer.py`: `ensure_bold_spacing` 함수 추가, 프롬프트 지침 보강, 파일 저장 시 후처리 적용
-- `test_pdf_processor.py`: `test_bold_spacing` 단위 테스트 케이스 추가
-- `CHANGELOG.md`: 변경 내역 추가
-- `output/` 하위 87개 `*_review.md` 파일: 볼드 뒤 공백 일괄 보정
+- `summarizer.py`: `optimize_mermaid_diagram` 정규식 보강, 프롬프트 지침 업데이트
+- `test_pdf_processor.py`: Mermaid 4대 오류 자동 보정 단위 테스트 추가
+- `CHANGELOG.md`: 변경 내역 갱신
+- `output/` 하위 90개 `*_review.md` 파일: 문법 보정 및 폰트 최적화 일괄 적용
 
 ### 테스트 결과
-- `test_pdf_processor.py` 단위 테스트 전체 통과 (볼드 공백 보정, 시리즈 파싱, 커버 캡처, 스킵 로직 모두 PASS)
+- `test_pdf_processor.py` 단위 테스트 전체 정상 통과
 
 ---
 
