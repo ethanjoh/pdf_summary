@@ -183,7 +183,7 @@ SUMMARY_PROMPT_TEMPLATE = """
    - ③ **노드 & 라벨 큰따옴표 필수** : 특수문자(/, :, ', &, ·, 줄바꿈 태그)로 인한 파서 충돌을 막기 위해 노드는 반드시 `ID["텍스트"]`, 화살표 라벨은 `-->|"텍스트"|`처럼 큰따옴표로 감싸세요.
    - ④ **표준 연결선 문법** : 실선 화살표 `A -->|"라벨"| B`, 점선 화살표 `A -.->|"라벨"| B` (비표준 `-.라벨.->` 금지), 무방향 점선 `A -.- |"라벨"| B`를 준수하세요.
 3. **Mermaid 고시인성 테마 & 가독성** : 세로형(`graph TD`), 핵심 노드 5~7개 이내 압축, 관계 라벨 2~4자 축약, 맨 윗줄 고시인성 테마 지시문 필수 선언:
-   `%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#F0F7FF', 'primaryTextColor': '#0F172A', 'primaryBorderColor': '#2563EB', 'lineColor': '#334155', 'secondaryColor': '#FEF3C7', 'tertiaryColor': '#F0FDF4', 'edgeLabelBackground': '#FFFFFF', 'fontSize': '14px'}}}%%`
+   `%%{{init: {{'theme': 'base', 'themeVariables': {{'primaryColor': '#F0F7FF', 'primaryTextColor': '#0F172A', 'primaryBorderColor': '#2563EB', 'lineColor': '#334155', 'secondaryColor': '#FEF3C7', 'tertiaryColor': '#F0FDF4', 'edgeLabelBackground': '#FFFFFF', 'fontSize': '14px'}}}}}}%%`
 
 ---
 
@@ -210,7 +210,7 @@ SUMMARY_PROMPT_TEMPLATE = """
 - **핵심 구성 안내** : [소설인 경우 '주요 등장인물 관계', 비문학인 경우 '핵심 이론/개념 체계도' 요약]
 - **Mermaid 다이어그램 (고시인성 세로형 구조)** :
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#F0F7FF', 'primaryTextColor': '#0F172A', 'primaryBorderColor': '#2563EB', 'lineColor': '#334155', 'secondaryColor': '#FEF3C7', 'tertiaryColor': '#F0FDF4', 'edgeLabelBackground': '#FFFFFF', 'fontSize': '14px'}}}%%
+%%{{init: {{'theme': 'base', 'themeVariables': {{'primaryColor': '#F0F7FF', 'primaryTextColor': '#0F172A', 'primaryBorderColor': '#2563EB', 'lineColor': '#334155', 'secondaryColor': '#FEF3C7', 'tertiaryColor': '#F0FDF4', 'edgeLabelBackground': '#FFFFFF', 'fontSize': '14px'}}}}}}%%
 graph TD
     A["핵심 주체/인물 A"] -->|"갈등"| B["대립 대상/인물 B"]
     A -->|"협력"| C["조력자 C"]

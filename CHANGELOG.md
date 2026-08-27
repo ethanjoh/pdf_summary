@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## [2026-08-27] - 프롬프트 템플릿 내 Mermaid init 중괄호 이스케이프 버그 수정 ('init' KeyError 해결)
+
+### 변경 목적
+- 도서 요약 처리 시 `SUMMARY_PROMPT_TEMPLATE` 내 Mermaid 테마 지시문(`%%{init: ...}%%`)의 중괄호(`{}`)가 이스케이프되지 않아 `str.format()` 실행 중 `KeyError: 'init'` 에러가 발생하며 도서 요약 생성이 실패하던 버그 수정.
+
+### 주요 결정 사항
+1. **프롬프트 템플릿 중괄호 이스케이프 (`summarizer.py`)**:
+   - `SUMMARY_PROMPT_TEMPLATE` 내 지시문 지침 및 예시 다이어그램의 `%%{init: {'theme': 'base', ...}}%%`를 `%%{{init: {{'theme': 'base', ...}}}}%%`로 이스케이프 처리하여 문자열 포맷팅 시 `KeyError` 발생 원천 차단.
+2. **프롬프트 포맷팅 단위 테스트 추가 (`test_pdf_processor.py`)**:
+   - 단일 도서(`SUMMARY_PROMPT_TEMPLATE`), 시리즈 도서 및 분할 통합(`MERGE_SUMMARY_PROMPT`) 포맷팅 유효성을 검증하는 `test_prompt_template_formatting` 테스트 케이스 추가.
+
+### 수정한 파일
+- `summarizer.py`: `SUMMARY_PROMPT_TEMPLATE` 내 Mermaid init 중괄호 이스케이프 적용
+- `test_pdf_processor.py`: 프롬프트 템플릿 포맷팅 단위 테스트 추가
+- `CHANGELOG.md`: 변경 사항 기록
+
+### 테스트 결과
+- `test_pdf_processor.py` 단위 테스트 전체 정상 통과 (프롬프트 포맷팅, 볼드 공백 정규화, Mermaid 문법 보정, 시리즈 파싱, 북커버 추출 모두 PASS)
+
+---
+
 ## [2026-08-26] - 마크다운 볼드(**) 시작/끝 공백 오류 원천 방지 및 후처리 보정 고도화
 
 ### 변경 목적

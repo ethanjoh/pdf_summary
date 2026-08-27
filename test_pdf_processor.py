@@ -193,6 +193,48 @@ def test_mermaid_optimization():
     print("   -> Mermaid 다이어그램 가독성 및 4대 구문 오류 자동 보정 테스트 전체 통과!")
 
 
+def test_prompt_template_formatting():
+    print("\n--- [프롬프트 템플릿 문자열 포맷팅(KeyError 방지) 테스트] ---")
+    from summarizer import SUMMARY_PROMPT_TEMPLATE, MERGE_SUMMARY_PROMPT
+
+    # 1. 단일 도서 포맷팅 테스트 (소비를 그만두다)
+    prompt_single = SUMMARY_PROMPT_TEMPLATE.format(
+        book_title="소비를 그만두다",
+        cover_image_filename="소비를_그만두다_cover.jpg",
+        series_notice=""
+    )
+    assert "소비를 그만두다" in prompt_single
+    assert "소비를_그만두다_cover.jpg" in prompt_single
+    assert "%%{init: {'theme': 'base'" in prompt_single
+    assert "%%{{init" not in prompt_single
+    print("   [OK] 1. 단일 도서 요약 프롬프트 포맷팅 정상 동작 ('소비를 그만두다')")
+
+    # 2. 시리즈 도서 포맷팅 테스트
+    prompt_series = SUMMARY_PROMPT_TEMPLATE.format(
+        book_title="희망의 끈 (전 3권 시리즈)",
+        cover_image_filename="희망의_끈_cover.jpg",
+        series_notice="## 📚 시리즈물 특별 지침\n- 본 도서는 총 3권..."
+    )
+    assert "희망의 끈 (전 3권 시리즈)" in prompt_series
+    assert "시리즈물 특별 지침" in prompt_series
+    assert "%%{init: {'theme': 'base'" in prompt_series
+    print("   [OK] 2. 시리즈 도서 요약 프롬프트 포맷팅 정상 동작")
+
+    # 3. 분할 통합 요약 프롬프트 포맷팅 테스트
+    prompt_merge = MERGE_SUMMARY_PROMPT.format(
+        book_title="대용량 도서",
+        total_parts=3,
+        series_notice="",
+        partial_summaries="### 파트 1 요약\n내용...",
+        cover_image_filename="대용량_도서_cover.jpg"
+    )
+    assert "대용량 도서" in prompt_merge
+    assert "파트 1 요약" in prompt_merge
+    assert "%%{init: {'theme': 'base'" in prompt_merge
+    print("   [OK] 3. 분할 통합(Merge) 요약 프롬프트 포맷팅 정상 동작")
+    print("   -> 프롬프트 템플릿 포맷팅 테스트 전체 통과!")
+
+
 def test_pdf_processor():
     import shutil
     test_dir = Path("./test_workspace")
@@ -208,6 +250,9 @@ def test_pdf_processor():
 
     # 3. Mermaid 다이어그램 가독성 최적화 테스트
     test_mermaid_optimization()
+
+    # 4. 프롬프트 템플릿 포맷팅 테스트
+    test_prompt_template_formatting()
 
     print("\n--- [시리즈물 그룹화 및 1권 커버 캡처 테스트] ---")
     # 샘플 파일 생성
