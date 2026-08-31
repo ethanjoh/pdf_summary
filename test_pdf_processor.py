@@ -12,7 +12,7 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-from pdf_processor import extract_book_cover, get_pdf_metadata, parse_series_info, group_pdf_series
+from pdf_processor import extract_book_cover, get_pdf_metadata, parse_series_info, group_pdf_series, split_pdf_into_parts
 
 
 def create_sample_pdf(file_path: Path):
@@ -103,6 +103,85 @@ def test_bold_spacing():
     print("   -> 마크다운 볼드(** **) 공백 보정 단위 테스트 전체 통과!")
 
 
+def test_escape_tilde():
+    print("\n--- [마크다운 물결표(~) 취소선 오인 방지 이스케이프(escape_tilde) 테스트] ---")
+    from summarizer import escape_tilde
+
+    test_cases = [
+        # (입력, 기대값)
+        # 1. 수치 범위 및 기간 표기
+        ("30~50자 내외", "30\\~50자 내외"),
+        ("1~2문장의 핵심 요약 (80~150자)", "1\\~2문장의 핵심 요약 (80\\~150자)"),
+        ("주요 인물 4~6명의 갈등", "주요 인물 4\\~6명의 갈등"),
+        ("1990~2000년대 경제 흐름", "1990\\~2000년대 경제 흐름"),
+        # 2. 문장 내 일반 물결표 및 취소선 형태
+        ("안녕하세요~ 반갑습니다~", "안녕하세요\\~ 반갑습니다\\~"),
+        ("~~취소선 텍스트~~", "\\~\\~취소선 텍스트\\~\\~"),
+        # 3. 이미 이스케이프된 경우 중복 이스케이프 방지
+        ("30\\~50자", "30\\~50자"),
+        ("이미 \\~ 이스케이프됨", "이미 \\~ 이스케이프됨"),
+        # 4. 인라인 코드(`...`) 보호 검증
+        ("일반 텍스트 1~2와 `인라인 코드 1~2` 비교", "일반 텍스트 1\\~2와 `인라인 코드 1~2` 비교"),
+        ("`~` 기호를 설명합니다.", "`~` 기호를 설명합니다."),
+        # 5. 코드 블록(```...```) 보호 검증
+        (
+            "본문 10~20페이지입니다.\n```python\nx = ~y\nprint('1~2')\n```\n하단 30~40페이지입니다.",
+            "본문 10\\~20페이지입니다.\n```python\nx = ~y\nprint('1~2')\n```\n하단 30\\~40페이지입니다."
+        ),
+    ]
+
+    for inp, expected in test_cases:
+        actual = escape_tilde(inp)
+        assert actual == expected, f"물결표 이스케이프 실패!\n입력: {inp}\n실제: {actual}\n기대: {expected}"
+        print(f"   [OK] '{inp[:30]}...' -> '{actual[:30]}...'")
+
+    print("   -> 마크다운 물결표 이스케이프 단위 테스트 전체 통과!")
+
+
+def test_tag_normalization():
+    print("\n--- [메타데이터 태그 '#' 제거 및 쉼표 구분(키워드1, 키워드2) 자동 정규화(normalize_tags) 테스트] ---")
+    from summarizer import normalize_tags
+
+    test_cases = [
+        # (입력, 기대값)
+        # 1. 공백으로만 구분된 다중 해시태그 -> # 제거 및 쉼표 구분 정규화
+        (
+            "- **추천 카테고리/태그** : #경제경영 #더골 #TheGoal #엘리골드렛 #TOC",
+            "- **추천 카테고리/태그** : 경제경영, 더골, TheGoal, 엘리골드렛, TOC"
+        ),
+        # 2. 이미 쉼표로 구분된 해시태그 -> # 제거 및 쉼표 구분 정규화
+        (
+            "- **추천 카테고리/태그** : #경제경영, #더골, #TheGoal",
+            "- **추천 카테고리/태그** : 경제경영, 더골, TheGoal"
+        ),
+        # 3. 이미 # 없이 쉼표로 나열된 텍스트 -> 정규화 유지
+        (
+            "- **추천 카테고리/태그** : 경제경영, 더골, TheGoal",
+            "- **추천 카테고리/태그** : 경제경영, 더골, TheGoal"
+        ),
+        # 4. 다양한 태그 라인 prefix 및 단일 태그
+        (
+            "- **추천 태그** : #소설 #추리 #스릴러",
+            "- **추천 태그** : 소설, 추리, 스릴러"
+        ),
+        (
+            "- **태그** : #단일태그",
+            "- **태그** : 단일태그"
+        ),
+        (
+            "- **Tags** : #AI #Python #Gemini",
+            "- **Tags** : AI, Python, Gemini"
+        ),
+    ]
+
+    for inp, expected in test_cases:
+        actual = normalize_tags(inp)
+        assert actual == expected, f"태그 정규화 실패!\n입력: {inp}\n실제: {actual}\n기대: {expected}"
+        print(f"   [OK] '{inp}' -> '{actual}'")
+
+    print("   -> 메타데이터 태그 '#' 제거 및 쉼표 구분 정규화 단위 테스트 전체 통과!")
+
+
 def test_mermaid_optimization():
     print("\n--- [Mermaid 다이어그램 가독성 및 4대 구문 오류 자동 보정 테스트] ---")
     from summarizer import optimize_mermaid_diagram, postprocess_markdown
@@ -171,25 +250,25 @@ def test_mermaid_optimization():
     assert "graph TD" in optimized, "graph LR이 graph TD로 전환되지 않았습니다."
     print("   [OK] 5. %%{init:...}%% 고시인성 테마 지시문 자동 추가 및 graph TD 전환 확인")
 
-    # 6. postprocess_markdown 종합 검증 (볼드 공백 + Mermaid 4대 오류 + 고시인성 테마 동시 적용)
+    # 6. postprocess_markdown 종합 검증 (볼드 공백 + 물결표 이스케이프 + Mermaid 4대 오류 + 고시인성 테마 동시 적용)
     combined_sample = (
-        "**도서명**: 80/20 법칙\n"
+        "**도서명**: 80/20 법칙 (30~50자)\n"
         "```mermaid\n"
         "graph LR\n"
         "    subgraph 핵심 원리: 80대 20\n"
         "        A[투입: 20%의 원인] -.결과 도출.-> B[산출: 80%의 성과]\n"
         "    end\n"
         "```\n"
-        "**결론**입니다."
+        "**결론**입니다~"
     )
     result = postprocess_markdown(combined_sample)
-    assert "**도서명** : 80/20 법칙" in result
-    assert "**결론** 입니다." in result
+    assert "**도서명** : 80/20 법칙 (30\\~50자)" in result
+    assert "**결론** 입니다\\~" in result
     assert "graph TD" in result
     assert "primaryTextColor': '#0F172A'" in result
     assert 'subgraph sub_1 ["핵심 원리: 80대 20"]' in result
     assert 'A["투입: 20%의 원인"] -.->|"결과 도출"| B["산출: 80%의 성과"]' in result
-    print("   [OK] 6. postprocess_markdown 종합 후처리(볼드 공백 + 4대 오류 보정 + 고시인성 테마) 완벽 동작 확인")
+    print("   [OK] 6. postprocess_markdown 종합 후처리(볼드 공백 + 물결표 이스케이프 + 4대 오류 보정 + 고시인성 테마) 완벽 동작 확인")
     print("   -> Mermaid 다이어그램 가독성 및 4대 구문 오류 자동 보정 테스트 전체 통과!")
 
 
@@ -235,6 +314,40 @@ def test_prompt_template_formatting():
     print("   -> 프롬프트 템플릿 포맷팅 테스트 전체 통과!")
 
 
+def test_pdf_split(test_dir: Path):
+    print("\n--- [PDF 분할(split_pdf_into_parts) 및 Windows 파일 잠금 해제 테스트] ---")
+    multi_page_pdf = test_dir / "대용량테스트도서.pdf"
+    
+    # 6페이지짜리 샘플 PDF 생성
+    doc = pymupdf.open()
+    for i in range(6):
+        page = doc.new_page()
+        page.insert_text((50, 100), f"Page {i+1} Content", fontsize=20)
+    doc.save(str(multi_page_pdf))
+    doc.close()
+
+    # 3등분 분할 실행 (Windows Permission denied 오류 없이 저장 및 파일 핸들 정상 해제 검증)
+    parts = split_pdf_into_parts(multi_page_pdf, num_parts=3)
+    assert len(parts) == 3, f"3개 파트로 분할되어야 하나 {len(parts)}개 반환됨"
+
+    for idx, part in enumerate(parts, 1):
+        assert part.exists(), f"분할된 파일이 존재하지 않음: {part}"
+        part_doc = pymupdf.open(part)
+        assert len(part_doc) == 2, f"각 파트가 2페이지여야 하나 {len(part_doc)}페이지임"
+        part_doc.close()
+        print(f"   [OK] 파트 {idx}: {part.name} (2페이지)")
+
+    # 임시 파일 삭제 테스트 (파일 잠금 없이 정상 삭제되는지 확인)
+    for part in parts:
+        part.unlink()
+        assert not part.exists()
+    
+    if multi_page_pdf.exists():
+        multi_page_pdf.unlink()
+    print("   [OK] 임시 분할 파일 정상 삭제 및 잠금 해제 확인")
+    print("   -> PDF 분할 및 임시 파일 관리 테스트 통과!")
+
+
 def test_pdf_processor():
     import shutil
     test_dir = Path("./test_workspace")
@@ -248,11 +361,20 @@ def test_pdf_processor():
     # 2. 마크다운 볼드 공백 보정 테스트
     test_bold_spacing()
 
-    # 3. Mermaid 다이어그램 가독성 최적화 테스트
+    # 3. 마크다운 물결표 이스케이프 테스트
+    test_escape_tilde()
+
+    # 4. 메타데이터 태그 쉼표 구분 정규화 테스트
+    test_tag_normalization()
+
+    # 5. Mermaid 다이어그램 가독성 최적화 테스트
     test_mermaid_optimization()
 
-    # 4. 프롬프트 템플릿 포맷팅 테스트
+    # 6. 프롬프트 템플릿 포맷팅 테스트
     test_prompt_template_formatting()
+
+    # 7. PDF 분할 및 임시 파일 핸들 테스트
+    test_pdf_split(test_dir)
 
     print("\n--- [시리즈물 그룹화 및 1권 커버 캡처 테스트] ---")
     # 샘플 파일 생성

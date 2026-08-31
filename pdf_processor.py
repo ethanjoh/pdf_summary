@@ -185,9 +185,9 @@ def split_pdf_into_parts(pdf_path: str | Path, num_parts: int = 2) -> list[Path]
         tmp = tempfile.NamedTemporaryFile(
             suffix=".pdf", prefix=f"{pdf_path.stem}_part{i+1}_", delete=False
         )
+        tmp.close()
         part_doc.save(tmp.name)
         part_doc.close()
-        tmp.close()
         parts.append(Path(tmp.name))
 
     doc.close()

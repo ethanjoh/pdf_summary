@@ -1,5 +1,125 @@
 # CHANGELOG
 
+## [2026-08-31] - 마크다운 물결표(~) 취소선 오인 방지 이스케이프(\~) 처리 및 자동 보정
+
+### 변경 목적
+- 마크다운 렌더러(티스토리, 네이버 블로그, 벨로그, 깃허브 등)에서 수치 범위나 문맥에 사용된 `~`(물결표) 기호가 취소선(strikethrough) 또는 아래첨자(subscript) 문법으로 오인되어 서식이 깨지는 문제를 방지하기 위해 `\~`으로 자동 이스케이프 처리.
+
+### 주요 결정 사항
+1. **AI 프롬프트 물결표 이스케이프 지침 추가 (`summarizer.py`)**:
+   - `SUMMARY_PROMPT_TEMPLATE` 및 `PARTIAL_SUMMARY_PROMPT`의 필수 문법 규칙에 물결표(`~`) 사용 시 백슬래시 이스케이프(`\~`)를 적용하도록 명시 (예: `30\~50자`, `1\~2문장`, `4\~6명`, `1990\~2000년대`).
+   - 템플릿 내부 안내 및 예시 문구(`30~50자` -> `30\~50자` 등)를 `\~` 형태로 일괄 정규화.
+2. **후처리 함수 `escape_tilde` 구현 및 `postprocess_markdown` 연동 (`summarizer.py`)**:
+   - 코드 블록(````...````) 및 인라인 코드(`` `...` ``) 영역을 안전하게 보호하면서 일반 텍스트 영역의 미이스케이프 `~`(`(?<!\\)~`)를 `\~`로 자동 치환.
+   - 이미 `\~`로 이스케이프된 경우 중복 이스케이프(`\\~`) 방지.
+   - `postprocess_markdown()` 종합 후처리 파이프라인에 `escape_tilde` 연동.
+3. **단위 테스트 추가 및 문서화 (`test_pdf_processor.py`, `README.md`)**:
+   - `test_escape_tilde` 단위 테스트 추가 (수치 범위, 일반 물결표, 인라인 코드/코드 블록 보호, 중복 이스케이프 방지 등 검증).
+   - `README.md` 가이드 문서 내 마크다운 예시 텍스트 갱신 및 렌더링 자동 보정 기능 안내 추가.
+
+### 수정한 파일
+- `summarizer.py`: `escape_tilde` 함수 추가, `postprocess_markdown` 연동, 프롬프트 템플릿 규칙 갱신
+- `test_pdf_processor.py`: `test_escape_tilde` 단위 테스트 추가 및 종합 후처리 테스트 갱신
+- `README.md`: 마크다운 예시 및 후처리 기능 설명 갱신
+- `CHANGELOG.md`: 변경 사항 기록
+
+### 테스트 결과
+- `test_pdf_processor.py` 단위 테스트 전체 정상 통과 (물결표 이스케이프, 태그 정규화, 볼드 공백 보정, Mermaid 문법/가독성 보정, 프롬프트 포맷팅, PDF 분할, 시리즈 파싱, 북커버 추출 모두 PASS)
+
+---
+
+## [2026-08-29] - 폴백 대상 모델에서 gemini-3.5-flash 제외
+
+### 변경 목적
+- 도서 요약 품질 유지 및 모델 전환 제한을 위해 일일 할당량 소진 또는 오류 발생 시 대체 모델 목록에서 `gemini-3.5-flash`로 자동 전환되지 않도록 제외.
+
+### 주요 결정 사항
+1. **대체 모델 목록 조정 (`summarizer.py`)**:
+   - `FALLBACK_MODELS = ["gemini-3.6-flash"]`로 수정하여 `gemini-3.7-flash` 할당량 소진 시 `gemini-3.6-flash`까지만 폴백 시도하도록 설정.
+2. **문서 동기화 (`README.md`)**:
+   - 폴백 모델 안내 및 기술 스택 설명에서 `gemini-3.5-flash` 항목 제거.
+
+### 수정한 파일
+- `summarizer.py`: `FALLBACK_MODELS`에서 `gemini-3.5-flash` 제거
+- `README.md`: 모델 폴백 안내 및 기술 스택 갱신
+- `CHANGELOG.md`: 변경 사항 기록
+
+### 테스트 결과
+- `test_pdf_processor.py` 단위 테스트 전체 정상 통과
+
+---
+
+## [2026-08-29] - 블로그 플랫폼 태그창 호환을 위한 메타데이터 태그 '#' 제거 및 쉼표 구분 순수 키워드 자동 정규화
+
+### 변경 목적
+- 블로그 플랫폼(티스토리, 네이버 블로그, 워드프레스 등)의 태그 입력창에 바로 복사/붙여넣기하여 개별 태그로 자동 등록될 수 있도록, 태그에서 '#' 기호를 제거하고 쉼표(`, `)로 구분된 순수 키워드 목록 형식으로 개선.
+
+### 주요 결정 사항
+1. **AI 프롬프트 태그 작성 지침 변경 (`summarizer.py`)**:
+   - `SUMMARY_PROMPT_TEMPLATE`의 태그 지침을 '#' 없이 쉼표로 키워드를 나열(`[장르], [핵심키워드1], [핵심키워드2], [추천독자층]`)하도록 명시.
+2. **후처리 함수 `normalize_tags` 구현 및 `postprocess_markdown` 연동 (`summarizer.py`)**:
+   - 정규식을 통해 메타데이터의 태그 라인에서 `#` 기호를 제거하고 쉼표(`, `)로 분리된 순수 키워드 문자열(`키워드1, 키워드2, 키워드3`)로 자동 정규화.
+3. **기존 생성 마크다운 파일 223개 일괄 보정 (`output/`)**:
+   - `output/` 폴더 내 기존 마크다운 파일들의 추천 태그 라인에서 `#` 기호를 제거하고 쉼표 구분 형식으로 일괄 자동 보정 완료.
+4. **단위 테스트 추가 및 문서화 (`test_pdf_processor.py`, `README.md`)**:
+   - `test_tag_normalization` 단위 테스트 추가 및 전체 테스트 스위트 검증 완료.
+
+### 수정한 파일
+- `summarizer.py`: `normalize_tags` 함수 추가, `postprocess_markdown` 연동, `SUMMARY_PROMPT_TEMPLATE` 태그 규칙 갱신
+- `test_pdf_processor.py`: 태그 '#' 제거 및 쉼표 구분 단위 테스트 추가 및 테스트 실행기 연동
+- `README.md`: 마크다운 산출물 예시 태그 포맷 갱신
+- `output/` 하위 마크다운 파일들: 태그 '#' 제거 및 쉼표 구분 일괄 적용
+- `CHANGELOG.md`: 변경 사항 기록
+
+### 테스트 결과
+- `test_pdf_processor.py` 단위 테스트 전체 정상 통과 (태그 정규화, 볼드 공백 정규화, Mermaid 문법/가독성 보정, 프롬프트 포맷팅, PDF 분할, 시리즈 파싱, 북커버 추출 모두 PASS)
+
+---
+
+## [2026-08-28] - Gemini API 503 UNAVAILABLE(서버 일시 과부하) 자동 재시도 및 모델 폴백 대응
+
+### 변경 목적
+- Google Gemini API 서버의 일시적 트래픽 급증으로 `503 UNAVAILABLE` (This model is currently experiencing high demand) 에러 발생 시, 작업이 중단되지 않고 자동 대기 후 재시도 및 대체 모델로 폴백하여 작업을 끝까지 완수하도록 개선.
+
+### 주요 결정 사항
+1. **503 / 서버 일시 과부하 감지 및 지수 백오프 대기 재시도 (`summarizer.py`)**:
+   - `503`, `500`, `UNAVAILABLE`, `high demand` 등 일시적 서버 장애 키워드를 감지하여 15초, 30초, 45초 등 점진적 대기 후 최대 5회까지 자동 재시도하도록 로직 추가.
+2. **서버 과부하 지속 시 대체 모델 자동 폴백 (`summarizer.py`)**:
+   - 동일 모델에서 서버 과부하가 지속되어 최대 재시도 횟수를 초과할 경우, 즉시 다음 대체 모델(`gemini-3.6-flash`, `gemini-3.5-flash`)로 자동 전환하여 요약 생성 계속 진행.
+
+### 수정한 파일
+- `summarizer.py`: `_generate_content_with_retry` 메서드에 503/서버 과부하 자동 재시도 및 대체 모델 폴백 로직 구현
+- `CHANGELOG.md`: 변경 사항 기록
+
+### 테스트 결과
+- `test_pdf_processor.py` 단위 테스트 전체 정상 통과
+
+---
+
+## [2026-08-28] - 대용량 PDF 분할 시 Windows 파일 잠금 해제 버그 수정 (Permission denied 해결)
+
+### 변경 목적
+- 대용량 PDF 요약 시 토큰 초과로 인해 `split_pdf_into_parts()` 실행 중 `NamedTemporaryFile`이 파일 핸들을 점유한 상태에서 PyMuPDF `part_doc.save()`가 호출되어 Windows 환경에서 `code=2: cannot remove file ...: Permission denied` 오류가 발생하며 작업이 중단되던 현상 해결.
+
+### 주요 결정 사항
+1. **임시 파일 핸들 선행 닫기 (`pdf_processor.py`)**:
+   - `tempfile.NamedTemporaryFile(..., delete=False)` 생성 직후 `tmp.close()`를 호출하여 Python 프로세스의 파일 핸들을 해제한 뒤 `part_doc.save(tmp.name)`를 실행하도록 순서 보정.
+2. **임시 분할 파일 정리 로직 안전성 강화 (`summarizer.py`)**:
+   - `_summarize_chunked` 내 `finally` 정리 블록에서 원본 PDF 경로 리스트(`original_paths`)를 명확히 제외하고 실제 임시 파일만 안전하게 `os.unlink()`하도록 정리.
+3. **단위 테스트 추가 (`test_pdf_processor.py`)**:
+   - 다중 페이지 PDF를 3등분 분할 저장하고 임시 파일 삭제 및 파일 잠금 해제 동작을 검증하는 `test_pdf_split` 테스트 케이스 추가.
+
+### 수정한 파일
+- `pdf_processor.py`: `split_pdf_into_parts` 내 `tmp.close()` 호출 시점 조정
+- `summarizer.py`: `_summarize_chunked` 임시 파일 정리 조건식 보정
+- `test_pdf_processor.py`: PDF 분할 및 임시 파일 관리 단위 테스트 추가
+- `CHANGELOG.md`: 변경 사항 기록
+
+### 테스트 결과
+- `test_pdf_processor.py` 단위 테스트 전체 정상 통과 (PDF 분할 저장/삭제, 프롬프트 포맷팅, 볼드 공백 정규화, Mermaid 문법 보정, 시리즈 파싱, 북커버 추출 모두 PASS)
+
+---
+
 ## [2026-08-27] - 프롬프트 템플릿 내 Mermaid init 중괄호 이스케이프 버그 수정 ('init' KeyError 해결)
 
 ### 변경 목적

@@ -15,7 +15,7 @@ warnings.filterwarnings("ignore", message=".*AFC.*")
 import re
 
 # 일일 무료 할당량 초과 시 순서대로 시도할 대체 모델 목록
-FALLBACK_MODELS = ["gemini-3.6-flash", "gemini-3.5-flash"]
+FALLBACK_MODELS = ["gemini-3.6-flash"]
 
 
 def ensure_bold_spacing(text: str) -> str:
@@ -47,6 +47,58 @@ def ensure_bold_spacing(text: str) -> str:
         parts[i] = pattern.sub(fix_bold_match, parts[i])
     return "```".join(parts)
 
+
+def escape_tilde(text: str) -> str:
+    """
+    마크다운 렌더러(티스토리, 네이버 블로그, 벨로그, 깃허브 등)에서
+    물결표(~) 기호가 취소선(strikethrough)이나 특수 태그로 오인되어 서식이 깨지는 것을 방지합니다.
+    - 코드 블록(```...```) 및 인라인 코드(`...`) 내부의 ~는 보호(유지)
+    - 일반 텍스트 영역에서 이스케이프되지 않은 ~를 \\~ 형태로 치환 (이미 \\~인 경우 중복 이스케이프 방지)
+    """
+    if not text:
+        return ""
+
+    # 1. 코드 블록(```...```)과 일반 마크다운 텍스트 분리
+    code_block_parts = text.split("```")
+    for i in range(0, len(code_block_parts), 2):
+        # 2. 인라인 코드(`...`) 분리
+        inline_parts = code_block_parts[i].split("`")
+        for j in range(0, len(inline_parts), 2):
+            # 일반 텍스트 영역: 앞글자가 백슬래시(\)가 아닌 물결표(~)를 \~ 로 치환
+            inline_parts[j] = re.sub(r'(?<!\\)~', r'\~', inline_parts[j])
+        code_block_parts[i] = "`".join(inline_parts)
+    return "```".join(code_block_parts)
+
+
+def normalize_tags(text: str) -> str:
+    """
+    마크다운 메타데이터의 태그 라인에서 '#' 기호를 제거하고,
+    블로그 플랫폼(티스토리, 네이버 블로그, 워드프레스, 벨로그 등) 태그 입력창에
+    바로 복사하여 개별 태그로 자동 등록될 수 있도록 쉼표(`, `)로 구분된 순수 키워드 형태로 정규화합니다.
+    예: #경제경영 #더골 #TOC -> 경제경영, 더골, TOC
+        #경제경영, #더골, #TOC -> 경제경영, 더골, TOC
+    """
+    if not text:
+        return ""
+
+    def fix_tag_line(match):
+        prefix = match.group(1)
+        content = match.group(2)
+        # #으로 시작하는 태그들이 있는 경우 #을 제거하여 추출
+        tags = re.findall(r'#([^\s,#]+)', content)
+        if tags:
+            return f"{prefix}{', '.join(tags)}"
+        # 이미 #이 없는 텍스트인 경우 쉼표 분리 정규화
+        parts = [p.strip().lstrip('#') for p in content.split(',') if p.strip()]
+        if parts:
+            return f"{prefix}{', '.join(parts)}"
+        return match.group(0)
+
+    pattern = re.compile(
+        r'^(.*?\*\*[^\n*]*(?:카테고리|태그|Tag|tag)[^\n*]*\*\*\s*:\s*)(.+)$',
+        re.MULTILINE | re.IGNORECASE
+    )
+    return pattern.sub(fix_tag_line, text)
 
 
 # Mermaid 고시인성(High-Contrast) 라이트 테마 설정 상수
@@ -142,12 +194,16 @@ def postprocess_markdown(text: str) -> str:
     """
     생성된 마크다운 본문의 렌더링 최적화를 위한 종합 후처리 함수:
     - 볼드(** **) 강조 구문 뒤 공백 자동 보정
+    - 물결표(~) 취소선 오작동 방지 이스케이프(\\~) 자동 보정
+    - 메타데이터 추천 태그 라인 쉼표 구분(#태그1, #태그2) 정규화
     - Mermaid 다이어그램 고시인성 테마(밝은 배경 + 진한 글씨) 및 세로형(TD) 구조 최적화
     - Mermaid 4대 구문 오류(특수공백, subgraph 식별자, 따옴표 누락, 비표준 연결선) 자동 보정
     """
     if not text:
         return ""
     text = ensure_bold_spacing(text)
+    text = escape_tilde(text)
+    text = normalize_tags(text)
     text = optimize_mermaid_diagram(text)
     return text
 
@@ -163,12 +219,12 @@ SUMMARY_PROMPT_TEMPLATE = """
 1. **[소설 / 이야기 / 문학 도서의 경우]**
    - **줄거리 & 서스펜스** : 단순 요약이 아니라 영화 예고편처럼 사건의 발단, 인물들의 팽팽한 대립과 심리전, 위기 상황을 생생하고 흡입력 있게 서술하세요.
    - **스포일러 엄격 금지** : 결말, 최종 범인/진실, 핵심 반전은 절대로 누설하지 마세요. 클라이맥스 직전의 최고조 긴장감 상태에서 강렬한 의문과 여운을 남겨야 합니다.
-   - **시각화 (인물 관계도)** : 이야기의 핵심 축을 이루는 주요 인물 4~6명의 갈등/협력 관계를 보여주는 세로형(graph TD) Mermaid 다이어그램 작성. (모든 조연을 나열하지 말고 핵심 대립 구도에 집중)
+   - **시각화 (인물 관계도)** : 이야기의 핵심 축을 이루는 주요 인물 4\\~6명의 갈등/협력 관계를 보여주는 세로형(graph TD) Mermaid 다이어그램 작성. (모든 조연을 나열하지 말고 핵심 대립 구도에 집중)
 
 2. **[경제경영 / 과학 / 인문 / 자기계발 / 실용서 등 비문학 도서의 경우]**
    - **핵심 통찰 & 문제의식** : 저자가 던지는 시대적 화두와 문제의식, 기존 상식을 뒤흔드는 혁신적 아이디어/이론을 명쾌하고 흥미진진하게 제시하세요.
    - **풍부한 사례 & 프레임워크** : 책 속의 흥미로운 실제 사례, 과학적 발견, 비즈니스 전략이나 핵심 실행 원리를 독자의 지적 호기심을 자극하도록 서술하세요.
-   - **시각화 (핵심 프레임워크)** : 책의 핵심 4~6개 이론 구조 또는 단계별 실행 프로세스를 보여주는 세로형(graph TD) Mermaid 다이어그램 작성.
+   - **시각화 (핵심 프레임워크)** : 책의 핵심 4\\~6개 이론 구조 또는 단계별 실행 프로세스를 보여주는 세로형(graph TD) Mermaid 다이어그램 작성.
 
 ---
 
@@ -177,20 +233,22 @@ SUMMARY_PROMPT_TEMPLATE = """
 아래 마크다운 구조를 정확히 준수하여 작성해 주세요.
 ※ [마크다운 및 Mermaid 필수 문법 규칙 (오류 방지 및 고시인성 필독)]
 1. **강조 구문 문법 & 공백 (필독)** : 굵은 글씨(**강조 텍스트**) 작성 시 ** 시작 기호 바로 뒤와 닫는 기호 바로 앞에는 공백을 절대 넣지 마세요 (**텍스트** O, ** 텍스트** X, ** 텍스트 ** X). 닫는 ** 뒤에는 다음 문자나 기호와의 구분을 위해 반드시 한 칸 공백을 넣으세요. (예: **핵심 통찰** 은 O, **도서명** : O)
-2. **Mermaid 4대 구문 오류 방지 규칙 (Syntax Error 방지)** :
+2. **물결표 이스케이프 (필독)** : 마크다운 렌더러에서 물결표(~)가 취소선(strikethrough)으로 인식되는 오류를 방지하기 위해, 수치 범위(예: 30\\~50자, 1\\~2문장, 4\\~6명)나 물결 기호 사용 시 반드시 백슬래시를 붙여 \\~ 형태로 작성하세요.
+3. **태그 구분 (필독)** : 추천 카테고리/태그 작성 시 블로그 플랫폼(티스토리, 네이버, 워드프레스 등) 태그창에 바로 붙여넣을 수 있도록 '#' 기호 없이 쉼표(`,`)로 키워드를 구분하여 작성하세요. (예: 장르, 키워드1, 키워드2, 추천독자층)
+4. **Mermaid 4대 구문 오류 방지 규칙 (Syntax Error 방지)** :
    - ① **특수 공백 금지** : 일반 ASCII 공백만 사용하세요. (웹 특수 공백 \\u00a0 절대 금지)
    - ② **subgraph 식별자** : 반드시 `subgraph 영문ID ["표시할 이름"]` 형식을 사용하세요. 식별자 자체에 한글, 공백, 콜론(:), 앰퍼샌드(&), 대괄호([])를 직접 쓰면 구문 오류가 발생합니다. (예: `subgraph SUB1 ["가족 및 친족"]`)
    - ③ **노드 & 라벨 큰따옴표 필수** : 특수문자(/, :, ', &, ·, 줄바꿈 태그)로 인한 파서 충돌을 막기 위해 노드는 반드시 `ID["텍스트"]`, 화살표 라벨은 `-->|"텍스트"|`처럼 큰따옴표로 감싸세요.
    - ④ **표준 연결선 문법** : 실선 화살표 `A -->|"라벨"| B`, 점선 화살표 `A -.->|"라벨"| B` (비표준 `-.라벨.->` 금지), 무방향 점선 `A -.- |"라벨"| B`를 준수하세요.
-3. **Mermaid 고시인성 테마 & 가독성** : 세로형(`graph TD`), 핵심 노드 5~7개 이내 압축, 관계 라벨 2~4자 축약, 맨 윗줄 고시인성 테마 지시문 필수 선언:
+5. **Mermaid 고시인성 테마 & 가독성** : 세로형(`graph TD`), 핵심 노드 5\\~7개 이내 압축, 관계 라벨 2\\~4자 축약, 맨 윗줄 고시인성 테마 지시문 필수 선언:
    `%%{{init: {{'theme': 'base', 'themeVariables': {{'primaryColor': '#F0F7FF', 'primaryTextColor': '#0F172A', 'primaryBorderColor': '#2563EB', 'lineColor': '#334155', 'secondaryColor': '#FEF3C7', 'tertiaryColor': '#F0FDF4', 'edgeLabelBackground': '#FFFFFF', 'fontSize': '14px'}}}}}}%%`
 
 ---
 
 ### [메타데이터 및 SEO 요약]
-- **SEO Title** : [클릭과 검색 유입을 극대화하는 매력적인 헤드라인 (30~50자 내외)]
-- **Meta Description** : [검색엔진 및 AI 요약에 노출될 1~2문장의 핵심 요약 (80~150자)]
-- **추천 카테고리/태그** : #[장르] #[핵심키워드1] #[핵심키워드2] #[추천독자층]
+- **SEO Title** : [클릭과 검색 유입을 극대화하는 매력적인 헤드라인 (30\\~50자 내외)]
+- **Meta Description** : [검색엔진 및 AI 요약에 노출될 1\\~2문장의 핵심 요약 (80\\~150자)]
+- **추천 카테고리/태그** : [장르], [핵심키워드1], [핵심키워드2], [추천독자층]
 
 ---
 
@@ -265,6 +323,7 @@ PARTIAL_SUMMARY_PROMPT = """
 
 결과를 마크다운으로 작성해 주세요. 이 요약은 이후 전체 도서 서평 작성의 재료로 사용됩니다.
 ※ 마크다운 작성 시 **강조** 시작 기호 뒤나 닫는 기호 앞에는 공백을 넣지 말고(**텍스트**), 닫는 기호 뒤에는 반드시 한 칸 공백을 넣어주세요. (예: **주요 주제** :)
+수치 범위나 물결표 사용 시에는 취소선 오작동 방지를 위해 반드시 백슬래시를 붙여 \\~ 형태로 작성해주세요. (예: 1\\~2페이지, 1990\\~2000년대)
 """
 
 MERGE_SUMMARY_PROMPT = """
@@ -305,9 +364,11 @@ class PDFSummarizer:
         default_wait: float = 35.0
     ):
         """
-        429 RESOURCE_EXHAUSTED 발생 시 에러 유형을 구분하여 처리합니다.
-        - 일일 할당량(PerDay/FreeTier) 초과 → 대체 모델로 자동 전환
-        - 분당 토큰/요청 한도(RPM/TPM) 초과 → 대기 후 재시도
+        API 호출 중 발생하는 에러(503, 500, 429, 404 등)를 구분하여 자동 재시도 및 모델 폴백을 수행합니다.
+        - 503 UNAVAILABLE / High Demand / 서버 일시적 과부하 → 점진적 대기 후 재시도 (최대 재시도 초과 시 대체 모델로 전환)
+        - 429 일일 할당량(PerDay/FreeTier) 초과 → 대체 모델로 즉시 전환
+        - 429 분당 토큰/요청 한도(RPM/TPM) 초과 → 대기 후 재시도
+        - 404 NOT_FOUND / 모델 미지원 → 대체 모델로 즉시 전환
         """
         import re
         gen_config = types.GenerateContentConfig(
@@ -328,15 +389,28 @@ class PDFSummarizer:
                 except Exception as e:
                     err_str = str(e)
                     is_quota_error = any(keyword in err_str for keyword in ["429", "RESOURCE_EXHAUSTED", "Quota exceeded"])
+                    is_server_error = any(keyword in err_str for keyword in ["503", "500", "502", "504", "UNAVAILABLE", "high demand", "overloaded", "ServiceUnavailable", "InternalServerError"])
                     is_model_unavailable = any(keyword in err_str for keyword in ["404", "NOT_FOUND", "no longer available"])
 
-                    if not is_quota_error and not is_model_unavailable:
+                    if not is_quota_error and not is_server_error and not is_model_unavailable:
                         raise e
 
                     # 모델 폐지/미지원 (404) → 즉시 다음 대체 모델로
                     if is_model_unavailable:
                         print(f"\n   [!] ⛔ '{model}' 모델은 더 이상 사용할 수 없습니다.")
                         break
+
+                    # 서버 일시적 과부하 (503 High Demand / UNAVAILABLE / 500 등) → 대기 후 재시도
+                    if is_server_error:
+                        if attempt < max_retries:
+                            wait_seconds = 15.0 * attempt
+                            print(f"\n   [*] ⏳ '{model}' Google 서버 일시 과부하(503 High Demand) 감지...")
+                            print(f"       {int(wait_seconds)}초 동안 대기 후 자동 재시도합니다... (시도 {attempt}/{max_retries})")
+                            time.sleep(wait_seconds)
+                            continue
+                        else:
+                            print(f"\n   [!] ⛔ '{model}' 모델 서버 과부하 지속으로 최대 재시도 횟수 초과.")
+                            break  # 다음 대체 모델로 전환
 
                     # 일일 할당량 초과 (재시도 무의미) → 다음 대체 모델로 전환
                     is_daily_limit = any(keyword in err_str for keyword in [
@@ -377,9 +451,9 @@ class PDFSummarizer:
 
         # 모든 모델 소진
         raise RuntimeError(
-            f"모든 모델({', '.join(models_to_try)})의 할당량이 소진되었습니다.\n"
+            f"모든 모델({', '.join(models_to_try)})의 호출이 실패(할당량 소진 또는 서버 오류)했습니다.\n"
             f"해결 방법:\n"
-            f"  1. 내일(태평양 시간 자정 이후) 다시 시도\n"
+            f"  1. 잠시 후 다시 시도 (Google 서버 일시적 과부하인 경우)\n"
             f"  2. Google AI Studio에서 유료 결제 활성화 (https://aistudio.google.com/)\n"
             f"  3. .env 파일의 GEMINI_API_KEY를 다른 프로젝트의 키로 교체"
         )
@@ -569,10 +643,11 @@ class PDFSummarizer:
             return postprocess_markdown(response.text or "")
 
         finally:
-            # 임시 분할 파일 정리
+            # 임시 분할 파일 정리 (원본 PDF 파일 제외)
+            original_paths = {p.resolve() for p in pdf_paths}
             for f in all_split_files:
                 try:
-                    if f.exists() and f != pdf_paths[0] if len(pdf_paths) == 1 else True:
+                    if f.resolve() not in original_paths and f.exists():
                         os.unlink(f)
                 except Exception:
                     pass
