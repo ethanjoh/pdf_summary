@@ -527,25 +527,31 @@ class PDFSummarizer:
             series_notice = ""
             display_title = book_title
 
-        # 1. 로컬에서 PDF 마크다운 텍스트 추출 시도
-        extracted_texts = []
-        for idx, p in enumerate(paths, 1):
-            label = f"[{idx}/{len(paths)}권] " if is_series else ""
-            print(f"     - {label}'{p.name}' 로컬 마크다운 텍스트 추출 중...")
-            txt = extract_markdown_from_pdf(p)
-            if is_series:
-                extracted_texts.append(f"## 📖 제 {idx}권 ({p.stem})\n\n{txt}")
-            else:
-                extracted_texts.append(txt)
+        # 1. 로컬에서 도서 원문 마크다운 텍스트 준비 (기존 _source.md 캐시 우선 확인)
+        has_cached_source = output_source_md_path.exists() and output_source_md_path.stat().st_size > 0
+        if has_cached_source:
+            with open(output_source_md_path, "r", encoding="utf-8") as f:
+                full_book_content = f.read().strip()
+            print(f"     - [⚡ 캐시 활용] 기존 도서 원문 마크다운 로드 완료: {output_source_md_path.name} ({len(full_book_content):,}자)")
+        else:
+            extracted_texts = []
+            for idx, p in enumerate(paths, 1):
+                label = f"[{idx}/{len(paths)}권] " if is_series else ""
+                print(f"     - {label}'{p.name}' 로컬 마크다운 텍스트 추출 중...")
+                txt = extract_markdown_from_pdf(p)
+                if is_series:
+                    extracted_texts.append(f"## 📖 제 {idx}권 ({p.stem})\n\n{txt}")
+                else:
+                    extracted_texts.append(txt)
 
-        full_book_content = "\n\n---\n\n".join(extracted_texts).strip()
+            full_book_content = "\n\n---\n\n".join(extracted_texts).strip()
 
         # 2. 텍스트 레이어 존재 여부 판별 (OCR 완료 vs 순수 스캔본)
         has_text_layer = len(full_book_content) >= 50
 
         if has_text_layer:
-            # === [도서 원문 마크다운 파일 저장 (--source 옵션 시)] ===
-            if save_source:
+            # === [도서 원문 마크다운 파일 저장 (--source 옵션 시, 미존재 시에만 신규 저장)] ===
+            if save_source and not has_cached_source:
                 output_source_md_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(output_source_md_path, "w", encoding="utf-8") as f:
                     f.write(full_book_content)

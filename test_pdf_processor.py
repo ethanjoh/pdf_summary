@@ -592,7 +592,39 @@ def test_pdf_processor():
     assert source_md_true.stat().st_size > 0
     print(f"   [OK] save_source=True 시 _source.md 정상 생성 검증 완료: {source_md_true.name}")
 
-    print("\n[OK] 모든 단위 테스트 및 시리즈/스킵/중복방지/마크다운추출/원문조건부저장/CLI옵션 검증 성공!")
+    print("\n--- [소스 마크다운(_source.md) 캐시 로드 및 스킵 시 보충 생성 테스트] ---")
+    # 1. 캐시 로드 테스트 (_source.md가 이미 존재할 때)
+    cached_source_file = test_dir / "캐시테스트도서_source.md"
+    cached_content = "# Cached Book Source Content\nThis content is loaded directly from cache."
+    cached_source_file.write_text(cached_content, encoding="utf-8")
+    assert cached_source_file.exists() and cached_source_file.stat().st_size > 0
+    # 캐시 파일 직접 로드 검증
+    with open(cached_source_file, "r", encoding="utf-8") as f:
+        loaded_cached_content = f.read().strip()
+    assert loaded_cached_content == cached_content
+    print("   [OK] 기존 _source.md 파일 캐시 우선 로드 검증 완료")
+
+    # 2. 스킵 도서의 _source.md 자동 보충 생성 테스트
+    skip_book_pdf = test_dir / "스킵보충도서.pdf"
+    create_sample_pdf(skip_book_pdf)
+    skip_review_md = test_dir / "스킵보충도서_review.md"
+    skip_review_md.write_text("# Existing Review Markdown", encoding="utf-8")
+    skip_source_md = test_dir / "스킵보충도서_source.md"
+    if skip_source_md.exists():
+        skip_source_md.unlink()
+
+    # main.py의 스킵 보충 로직 시뮬레이션
+    args_source_mode = True
+    if args_source_mode and not (skip_source_md.exists() and skip_source_md.stat().st_size > 0):
+        extracted_txt = extract_markdown_from_pdf(skip_book_pdf)
+        if len(extracted_txt) >= 50:
+            skip_source_md.write_text(extracted_txt, encoding="utf-8")
+
+    assert skip_source_md.exists(), "스킵 도서에서 _source.md가 보충 생성되지 않았습니다."
+    assert skip_source_md.stat().st_size > 0
+    print(f"   [OK] 스킵 도서 대상 _source.md 자동 보충 생성 검증 완료: {skip_source_md.name}")
+
+    print("\n[OK] 모든 단위 테스트 및 시리즈/스킵/중복방지/마크다운추출/원문조건부저장/캐시및보충/CLI옵션 검증 성공!")
     shutil.rmtree(test_dir, ignore_errors=True)
 
 

@@ -11,7 +11,7 @@ from tqdm import tqdm
 warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*divide by zero.*")
 warnings.filterwarnings("ignore", category=RuntimeWarning, module=".*pymupdf.*")
 
-from pdf_processor import extract_book_cover, get_pdf_metadata, group_pdf_series
+from pdf_processor import extract_book_cover, get_pdf_metadata, group_pdf_series, extract_markdown_from_pdf
 from summarizer import PDFSummarizer, QuotaExhaustedError
 
 # Windows 콘솔 utf-8 출력 설정
@@ -172,7 +172,7 @@ def main():
         if not args.overwrite:
             existing_md = find_existing_markdown(output_path, title, files)
             if existing_md:
-                # 마크다운은 있으나 북커버 이미지(.jpg 또는 .png)가 없는 경우 로컬에서 즉시 캡처(API 호출 없음)
+                # 1. 마크다운은 있으나 북커버 이미지(.jpg 또는 .png)가 없는 경우 로컬에서 즉시 캡처(API 호출 없음)
                 has_cover = (
                     cover_path.exists()
                     or (output_path / f"{safe_cover_stem}_cover.png").exists()
@@ -184,6 +184,25 @@ def main():
                         extract_book_cover(first_file, cover_path, dpi=args.dpi)
                     except Exception:
                         pass
+
+                # 2. 마크다운은 있으나 원문 마크다운(_source.md)이 없는 경우 로컬에서 즉시 추출 및 보충 (--source 옵션 시, API 호출 없음)
+                if args.source and not (source_md_path.exists() and source_md_path.stat().st_size > 0):
+                    try:
+                        extracted_texts = []
+                        for s_idx, p in enumerate(files, 1):
+                            txt = extract_markdown_from_pdf(p)
+                            if is_series:
+                                extracted_texts.append(f"## 📖 제 {s_idx}권 ({p.stem})\n\n{txt}")
+                            else:
+                                extracted_texts.append(txt)
+                        full_src = "\n\n---\n\n".join(extracted_texts).strip()
+                        if len(full_src) >= 50:
+                            source_md_path.parent.mkdir(parents=True, exist_ok=True)
+                            with open(source_md_path, "w", encoding="utf-8") as f:
+                                f.write(full_src)
+                    except Exception:
+                        pass
+
                 print(f"\n>> [건너뛰기/SKIP] ⏭️ 이미 마크다운이 완료된 도서입니다: '{title}' ({existing_md.name})")
                 skip_count += 1
                 continue
