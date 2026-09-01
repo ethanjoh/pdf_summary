@@ -104,15 +104,16 @@ def main():
     # 입력 폴더명을 서브폴더명으로 사용하여 결과물 분리 저장
     output_path = base_output_path / input_path.name
 
-    print("=" * 60)
-    print(" [PDF 도서 요약 & 블로그 마크다운 생성기]")
-    print(f" - 입력 폴더: {input_path}")
-    print(f" - 출력 폴더: {output_path} (하위 서브폴더: '{input_path.name}')")
-    print(f" - 사용할 모델: {args.model}")
-    print(f" - 작업 간 대기 시간(쿨다운): {args.delay}초")
-    print(f" - 기존 파일 덮어쓰기: {'활성화' if args.overwrite else '비활성화 (기존 마크다운 완료본 건너뜀)'}")
-    print(f" - 소스 마크다운 저장: {'활성화' if args.source else '비활성화'}")
-    print("=" * 60)
+    print("┌" + "─" * 68 + "┐")
+    print("│  📚 PDF 도서 요약 & 블로그 마크다운 생성기 (PDF Book Summarizer)  │")
+    print("├" + "─" * 68 + "┤")
+    print(f"│  📁 입력 폴더     : {input_path}")
+    print(f"│  💾 출력 폴더     : {output_path}")
+    print(f"│  🤖 기본 AI 모델  : {args.model}")
+    print(f"│  ⏱️  작업 간 쿨다운: {args.delay}초")
+    print(f"│  🔄 기존 덮어쓰기 : {'활성화' if args.overwrite else '비활성화 (기존 마크다운 완료본 스킵)'}")
+    print(f"│  📝 소스 원문저장 : {'활성화 (--source)' if args.source else '비활성화'}")
+    print("└" + "─" * 68 + "┘")
 
     # PDF 파일 목록 검색 (대소문자 무관 및 중복 방지)
     pdf_files = sorted(
@@ -128,15 +129,15 @@ def main():
     # 도서 및 시리즈 그룹화
     books = group_pdf_series(pdf_files)
     series_count = sum(1 for b in books if b["is_series"])
-    print(f"[*] 총 {len(pdf_files)}개의 PDF 파일 발견 -> {len(books)}종의 도서(시리즈 {series_count}건)로 분류 완료.")
+    print(f"\n🔍 [파일 탐색] 총 {len(pdf_files)}개 PDF 발견 -> {len(books)}종 도서 (시리즈 {series_count}건) 분류 완료")
 
     # 마크다운 완료 현황 사전 집계
     if not args.overwrite:
         already_completed = [b for b in books if find_existing_markdown(output_path, b["title"], b["files"]) is not None]
         pending_count = len(books) - len(already_completed)
-        print(f"[*] 현황 분석: 전체 {len(books)}종 중 {len(already_completed)}종 완료(스킵 예정), [ {pending_count}종 ] 신규 처리 예정.\n")
+        print(f"📊 [현황 분석] 전체 {len(books)}종 중 🟢 완료(스킵) {len(already_completed)}종 | ⏳ 신규 처리 예정 {pending_count}종\n")
     else:
-        print(f"[*] 덮어쓰기 모드: 전체 {len(books)}종 모두 다시 처리합니다.\n")
+        print(f"📊 [현황 분석] 덮어쓰기 모드: 전체 {len(books)}종 모두 신규 처리합니다.\n")
 
     # API 키 확인 및 Summarizer 초기화
     try:
@@ -149,6 +150,7 @@ def main():
     success_count = 0
     skip_count = 0
     fail_count = 0
+    failed_books = []
     quota_exhausted = False
 
     for idx, book in enumerate(tqdm(books, desc="도서 처리 진행률"), 1):
@@ -182,27 +184,31 @@ def main():
                         extract_book_cover(first_file, cover_path, dpi=args.dpi)
                     except Exception:
                         pass
-                print(f"\n>> [건너뛰기/SKIP] 이미 마크다운이 완료된 도서입니다: '{title}' ({existing_md.name})")
+                print(f"\n>> [건너뛰기/SKIP] ⏭️ 이미 마크다운이 완료된 도서입니다: '{title}' ({existing_md.name})")
                 skip_count += 1
                 continue
 
         if is_series:
             file_names_str = ", ".join([f.name for f in files])
-            print(f"\n>> [{idx}/{len(books)}] ▶ 도서 작업 시작: '{title}' (시리즈 총 {len(files)}권: {file_names_str})")
+            print(f"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            print(f" ▶ [{idx}/{len(books)}] 도서 작업 시작: '{title}' (시리즈 총 {len(files)}권: {file_names_str})")
+            print(f" ──────────────────────────────────────────────────────────────────")
         else:
-            print(f"\n>> [{idx}/{len(books)}] ▶ 도서 작업 시작: '{title}' ({first_file.name})")
+            print(f"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            print(f" ▶ [{idx}/{len(books)}] 도서 작업 시작: '{title}' ({first_file.name})")
+            print(f" ──────────────────────────────────────────────────────────────────")
 
         try:
             # 1. 1권(첫 번째 PDF) 북커버 이미지 추출
-            print(f"   - [1단계: 북커버] 대표 북커버 이미지 추출 중... ('{first_file.name}')")
+            print(f"   📸 [1단계: 북커버] 대표 북커버 이미지 추출 중... ('{first_file.name}')")
             extract_book_cover(first_file, cover_path, dpi=args.dpi)
-            print(f"     [✓] 북커버 저장 완료: {cover_path.name}")
+            print(f"      [✓] 북커버 저장 완료: {cover_path.name}")
 
             # 2. AI 내용 분석 및 통합 마크다운 생성
             if is_series:
-                print(f"   - [2단계: AI 분석] 시리즈 전체({len(files)}권) 마크다운 분석 및 서평 생성 중...")
+                print(f"   🧠 [2단계: AI 분석] 시리즈 전체({len(files)}권) 마크다운 분석 및 서평 생성 중...")
             else:
-                print(f"   - [2단계: AI 분석] 도서 마크다운 분석 및 서평 생성 중...")
+                print(f"   🧠 [2단계: AI 분석] 도서 마크다운 분석 및 서평 생성 중...")
 
             summarizer.summarize_series_to_markdown(
                 pdf_paths=files,
@@ -212,19 +218,24 @@ def main():
                 output_source_md_path=source_md_path,
                 save_source=args.source
             )
-            print(f"     [✓] 마크다운 리뷰 생성 완료: {md_path.name}")
-            print(f"   [완료] '{title}' 도서 작업이 성공적으로 종료되었습니다.")
+            print(f"      [✓] 마크다운 리뷰 생성 완료: {md_path.name}")
+            print(f"   ✨ [완료] '{title}' 도서 작업이 성공적으로 종료되었습니다.")
             success_count += 1
 
         except QuotaExhaustedError as e:
+            reason = "Gemini API 일일 무료 할당량(PerDay) 소진 또는 모든 모델 실패"
             print(f"\n   [!] 🛑 일일 무료 할당량 소진(또는 모든 모델 실패)으로 작업을 즉시 중단합니다.")
             print(f"       사유: {e}")
             fail_count += 1
+            failed_books.append({"title": title, "reason": reason, "detail": str(e).strip()})
             quota_exhausted = True
             break
         except Exception as e:
-            print(f"   [!] '{title}' 처리 중 에러 발생: {e}")
+            err_msg = str(e).strip()
+            first_line_err = err_msg.split("\n")[0] if "\n" in err_msg else err_msg
+            print(f"   [!] ❌ '{title}' 처리 중 에러 발생: {first_line_err}")
             fail_count += 1
+            failed_books.append({"title": title, "reason": first_line_err, "detail": err_msg})
 
         finally:
             # 3. 도서 간 안전 쿨다운 대기 (할당량 소진 시 제외, 다음 도서 진행 전 쿼터 보호)
@@ -232,16 +243,28 @@ def main():
                 print(f"   [*] 다음 도서 진행 전 안전 쿨다운 대기 중 ({args.delay}초)...")
                 time.sleep(args.delay)
 
-    print("\n" + "=" * 60)
-    print(" [작업 완료 보고]")
-    print(f" - 전체 대상 도서: {len(books)}종")
-    print(f" - 신규 처리 성공: {success_count}건")
+    # 성공률 계산
+    processed_count = success_count + fail_count
+    success_rate = (success_count / processed_count * 100) if processed_count > 0 else 0.0
+
+    print("\n" + "╔" + "═" * 68 + "╗")
+    print("   📊 [최종 작업 완료 보고]")
+    print("╠" + "═" * 68 + "╣")
+    print(f"  • 전체 대상 도서   : {len(books)}종")
+    print(f"  • 신규 처리 성공   : {success_count}건 ({success_rate:.1f}%) 🟢")
     if skip_count > 0:
-        print(f" - 기존 완료 건너뜀: {skip_count}건")
+        print(f"  • 기존 완료 스킵   : {skip_count}건 ⏭️")
     if fail_count > 0:
-        print(f" - 실패: {fail_count}건")
-    print(f" - 결과물 저장 위치: {output_path}")
-    print("=" * 60)
+        print(f"  • 처리 실패/중단   : {fail_count}건 ❌")
+    print(f"  • 결과물 저장 위치 : {output_path}")
+    print("╚" + "═" * 68 + "╝")
+
+    if failed_books:
+        print("\n┌── ❌ 실패 도서 및 원인 목록 (총 " + f"{len(failed_books)}건) ──────────────────────────────┐")
+        for f_idx, fb in enumerate(failed_books, 1):
+            print(f"│ {f_idx}. '{fb['title']}'")
+            print(f"│    └─ 원인: {fb['reason']}")
+        print("└" + "─" * 68 + "┘")
 
 
 if __name__ == "__main__":
