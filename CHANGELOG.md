@@ -1,5 +1,34 @@
 # CHANGELOG
 
+## [2026-09-01] - Gemini API 일일 무료 할당량 소진 시 메인 작업 즉시 안전 종료 처리
+
+### 변경 목적
+- 모든 모델(`gemini-3.7-flash`, `gemini-3.6-flash`)의 일일 무료 할당량(PerDay/FreeTier)이 소진되거나 호출이 모두 실패했을 때, 남은 도서들에 대해 매번 35초씩 대기하며 실패 에러를 반복 출력하던 문제를 해결하고 즉시 작업을 안전하게 종료하도록 개선.
+
+### 주요 결정 사항
+1. **커스텀 예외 `QuotaExhaustedError` 정의 및 발생 (`summarizer.py`)**:
+   - `QuotaExhaustedError` 예외 클래스 정의.
+   - `_generate_content_with_retry`에서 모든 모델 시도 실패 시 기존 `RuntimeError` 대신 `QuotaExhaustedError`를 명시적으로 발생.
+2. **메인 일괄 처리 루프 즉시 중단 및 쿨다운 스킵 (`main.py`)**:
+   - `QuotaExhaustedError` 발생 시 에러 사유 및 즉시 종료 안내를 출력하고 루프를 즉시 탈출(`break`).
+   - `finally` 블록의 불필요한 도서 간 쿨다운 대기(`time.sleep`)를 건너뛰어 즉시 최종 `[작업 완료 보고]` 통계를 출력하고 프로그램 종료.
+3. **단위 테스트 추가 (`test_pdf_processor.py`)**:
+   - `test_quota_exhausted_handling` 단위 테스트 추가: `QuotaExhaustedError` 정의 및 쿨다운 없는 즉시 루프 탈출(break) 시뮬레이션 검증.
+4. **가이드 문서 동기화 (`README.md`)**:
+   - 일일 무료 한도 소진 시 즉시 안전 종료 동작 안내 반영 및 목록 번호 정렬.
+
+### 수정한 파일
+- `summarizer.py`: `QuotaExhaustedError` 클래스 정의 및 모든 모델 소진 시 예외 발생
+- `main.py`: `QuotaExhaustedError` catch 및 쿨다운 없는 즉시 탈출(break) 처리
+- `test_pdf_processor.py`: 할당량 소진 시 즉시 종료 로직 단위 테스트 추가
+- `README.md`: 할당량 보호 및 즉시 종료 안내 반영
+- `CHANGELOG.md`: 변경 기록 추가
+
+### 테스트 결과
+- `test_pdf_processor.py` 단위 테스트 전체 정상 통과 (QuotaExhaustedError 검증, CLI 인자, 원문 조건부 저장, 물결표 이스케이프, 태그 정규화, 볼드 공백 보정, Mermaid 문법 보정, 프롬프트 포맷팅, PDF 분할, 시리즈 파싱, 북커버 추출 모두 PASS)
+
+---
+
 ## [2026-09-01] - README.md 기술 스택 최신화 (pymupdf4llm, Mermaid, unittest 추가)
 
 ### 변경 목적

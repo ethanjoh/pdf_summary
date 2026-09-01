@@ -12,7 +12,7 @@ warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*divide by 
 warnings.filterwarnings("ignore", category=RuntimeWarning, module=".*pymupdf.*")
 
 from pdf_processor import extract_book_cover, get_pdf_metadata, group_pdf_series
-from summarizer import PDFSummarizer
+from summarizer import PDFSummarizer, QuotaExhaustedError
 
 # Windows 콘솔 utf-8 출력 설정
 if sys.platform == "win32":
@@ -149,6 +149,7 @@ def main():
     success_count = 0
     skip_count = 0
     fail_count = 0
+    quota_exhausted = False
 
     for idx, book in enumerate(tqdm(books, desc="도서 처리 진행률"), 1):
         title = book["title"]
@@ -215,13 +216,19 @@ def main():
             print(f"   [완료] '{title}' 도서 작업이 성공적으로 종료되었습니다.")
             success_count += 1
 
+        except QuotaExhaustedError as e:
+            print(f"\n   [!] 🛑 일일 무료 할당량 소진(또는 모든 모델 실패)으로 작업을 즉시 중단합니다.")
+            print(f"       사유: {e}")
+            fail_count += 1
+            quota_exhausted = True
+            break
         except Exception as e:
             print(f"   [!] '{title}' 처리 중 에러 발생: {e}")
             fail_count += 1
 
         finally:
-            # 3. 도서 간 안전 쿨다운 대기 (성공/실패 무관하게 다음 도서 진행 전 쿼터 보호)
-            if idx < len(books) and args.delay > 0:
+            # 3. 도서 간 안전 쿨다운 대기 (할당량 소진 시 제외, 다음 도서 진행 전 쿼터 보호)
+            if not quota_exhausted and idx < len(books) and args.delay > 0:
                 print(f"   [*] 다음 도서 진행 전 안전 쿨다운 대기 중 ({args.delay}초)...")
                 time.sleep(args.delay)
 

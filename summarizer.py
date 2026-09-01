@@ -18,6 +18,11 @@ import re
 FALLBACK_MODELS = ["gemini-3.6-flash"]
 
 
+class QuotaExhaustedError(Exception):
+    """Gemini API의 일일 무료 할당량(PerDay/FreeTier) 소진 또는 모든 대체 모델 호출 실패 시 발생하는 예외"""
+    pass
+
+
 def ensure_bold_spacing(text: str) -> str:
     """
     마크다운 코드 블록(```...```)을 제외한 본문 영역에서
@@ -468,7 +473,7 @@ class PDFSummarizer:
                 continue
 
         # 모든 모델 소진
-        raise RuntimeError(
+        raise QuotaExhaustedError(
             f"모든 모델({', '.join(models_to_try)})의 호출이 실패(할당량 소진 또는 서버 오류)했습니다.\n"
             f"해결 방법:\n"
             f"  1. 잠시 후 다시 시도 (Google 서버 일시적 과부하인 경우)\n"

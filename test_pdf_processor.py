@@ -406,6 +406,50 @@ def test_cli_args():
     print("   -> CLI 인자 파서 단위 테스트 전체 통과!")
 
 
+def test_quota_exhausted_handling():
+    print("\n--- [일일 무료 할당량 소진(QuotaExhaustedError) 시 즉시 종료 로직 테스트] ---")
+    from summarizer import QuotaExhaustedError
+
+    # 1. 예외 타입 검증
+    assert issubclass(QuotaExhaustedError, Exception)
+    err = QuotaExhaustedError("모든 모델의 일일 무료 할당량이 소진되었습니다.")
+    assert "일일 무료 할당량" in str(err)
+    print("   [OK] QuotaExhaustedError 예외 클래스 정의 및 메시지 검증 성공")
+
+    # 2. 메인 루프 즉시 탈출 시뮬레이션 검증
+    mock_books = [
+        {"title": "도서1", "files": ["f1.pdf"]},
+        {"title": "도서2", "files": ["f2.pdf"]},
+        {"title": "도서3", "files": ["f3.pdf"]},
+    ]
+    processed_titles = []
+    quota_exhausted = False
+    fail_count = 0
+    cooldown_called = False
+
+    for idx, book in enumerate(mock_books, 1):
+        processed_titles.append(book["title"])
+        try:
+            if idx == 1:
+                raise QuotaExhaustedError("할당량 소진")
+        except QuotaExhaustedError as e:
+            fail_count += 1
+            quota_exhausted = True
+            break
+        except Exception:
+            fail_count += 1
+        finally:
+            if not quota_exhausted:
+                cooldown_called = True
+
+    # 1번째 도서에서 즉시 중단되어 2, 3번째 도서는 처리되지 않아야 함
+    assert processed_titles == ["도서1"], f"루프가 즉시 중단되지 않음: {processed_titles}"
+    assert quota_exhausted is True
+    assert fail_count == 1
+    assert cooldown_called is False, "할당량 소진 시 쿨다운이 호출되지 않아야 합니다."
+    print("   [OK] QuotaExhaustedError 발생 시 쿨다운 대기 없이 메인 루프 즉시 탈출(break) 검증 완료!")
+
+
 def test_pdf_processor():
     import shutil
     test_dir = Path("./test_workspace")
@@ -436,6 +480,9 @@ def test_pdf_processor():
 
     # 8. CLI 인자 파서 테스트
     test_cli_args()
+
+    # 9. 일일 무료 할당량 소진 시 즉시 종료 테스트
+    test_quota_exhausted_handling()
 
     print("\n--- [시리즈물 그룹화 및 1권 커버 캡처 테스트] ---")
     # 샘플 파일 생성
