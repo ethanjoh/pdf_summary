@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Optional
 from google import genai
 from google.genai import types
-from pdf_processor import split_pdf_into_parts
+from pdf_processor import split_pdf_into_parts, extract_markdown_from_pdf
 
 # SDK 내부 AFC(Automatic Function Calling) 권장 경고 메시지 필터링
 warnings.filterwarnings("ignore", message=".*automatic function calling.*")
@@ -210,8 +210,9 @@ def postprocess_markdown(text: str) -> str:
 
 SUMMARY_PROMPT_TEMPLATE = """
 당신은 베스트셀러 도서 전문 서평가이자 독서 마케팅 및 SEO/AEO(검색 및 AI 엔진 최적화) 전문가입니다.
-제공된 도서(PDF) 내용을 깊이 있게 분석한 후, 독자들이 책을 당장 구매하거나 펼쳐보고 싶어지도록 유도하는 최고 품질의 블로그 리뷰/서평 마크다운 포스팅을 작성해 주세요.
+제공된 도서 내용을 깊이 있게 분석한 후, 독자들이 책을 당장 구매하거나 펼쳐보고 싶어지도록 유도하는 최고 품질의 블로그 리뷰/서평 마크다운 포스팅을 작성해 주세요.
 {series_notice}
+{book_content_section}
 
 ## 🎯 도서 장르별 맞춤 분석 지침 (필독)
 도서의 성격(소설/문학 vs 경제경영/과학/인문/자기계발 등 비문학)을 스스로 판단하여, 각 장르의 매력을 극대화하는 맞춤형 구성을 적용하세요.
@@ -233,7 +234,7 @@ SUMMARY_PROMPT_TEMPLATE = """
 아래 마크다운 구조를 정확히 준수하여 작성해 주세요.
 ※ [마크다운 및 Mermaid 필수 문법 규칙 (오류 방지 및 고시인성 필독)]
 1. **강조 구문 문법 & 공백 (필독)** : 굵은 글씨(**강조 텍스트**) 작성 시 ** 시작 기호 바로 뒤와 닫는 기호 바로 앞에는 공백을 절대 넣지 마세요 (**텍스트** O, ** 텍스트** X, ** 텍스트 ** X). 닫는 ** 뒤에는 다음 문자나 기호와의 구분을 위해 반드시 한 칸 공백을 넣으세요. (예: **핵심 통찰** 은 O, **도서명** : O)
-2. **물결표 이스케이프 (필독)** : 마크다운 렌더러에서 물결표(~)가 취소선(strikethrough)으로 인식되는 오류를 방지하기 위해, 수치 범위(예: 30\\~50자, 1\\~2문장, 4\\~6명)나 물결 기호 사용 시 반드시 백슬래시를 붙여 \\~ 형태로 작성하세요.
+2. **물결표 이스케이프 (필독)** : 마크다운 렌더러에서 물결표(~)가 취소선(strikethrough)으로 인식되는 오류를 방지하기 위해, 수치 범위(예: 30\\~50자, 1\\~2문장, 4\\~6명)나 물결 기호 사용 시 반드시 백슬래시를 붙여 \\~ 형태로 작성해주세요.
 3. **태그 구분 (필독)** : 추천 카테고리/태그 작성 시 블로그 플랫폼(티스토리, 네이버, 워드프레스 등) 태그창에 바로 붙여넣을 수 있도록 '#' 기호 없이 쉼표(`,`)로 키워드를 구분하여 작성하세요. (예: 장르, 키워드1, 키워드2, 추천독자층)
 4. **Mermaid 4대 구문 오류 방지 규칙 (Syntax Error 방지)** :
    - ① **특수 공백 금지** : 일반 ASCII 공백만 사용하세요. (웹 특수 공백 \\u00a0 절대 금지)
@@ -300,7 +301,7 @@ graph TD
 
 ## 6. ❓ 자주 묻는 질문 (AEO 최적화 Q&A / FAQ)
 > AI 검색 엔진(ChatGPT Search, Perplexity 등) 및 검색 사용자가 자주 묻는 핵심 질문에 대한 명쾌한 답변입니다.
-
+ 
 **Q1. {book_title}은 어떤 책이며 누구에게 가장 큰 도움이 되나요?**
 - **A** : [명확하고 설득력 있는 답변]
 
@@ -313,7 +314,24 @@ graph TD
 ---
 """
 
-PARTIAL_SUMMARY_PROMPT = """
+PARTIAL_TEXT_SUMMARY_PROMPT = """
+당신은 도서 분석 전문가입니다. 아래 내용은 도서 '{book_title}'의 파트 {part_num}/{total_parts} 본문 텍스트입니다.
+이 파트의 핵심 내용을 상세히 분석하여 다음 항목을 정리해 주세요:
+- 주요 주제/논점/스토리 전개
+- 핵심 인물, 개념, 이론, 사례
+- 중요한 인용구나 데이터
+- 전체 맥락에서 이 파트가 담당하는 역할
+
+--- 파트 {part_num}/{total_parts} 본문 시작 ---
+{chunk_text}
+--- 파트 {part_num}/{total_parts} 본문 끝 ---
+
+결과를 마크다운으로 작성해 주세요. 이 요약은 이후 전체 도서 서평 작성의 재료로 사용됩니다.
+※ 마크다운 작성 시 **강조** 시작 기호 뒤나 닫는 기호 앞에는 공백을 넣지 말고(**텍스트**), 닫는 기호 뒤에는 반드시 한 칸 공백을 넣어주세요. (예: **주요 주제** :)
+수치 범위나 물결표 사용 시에는 취소선 오작동 방지를 위해 반드시 백슬래시를 붙여 \\~ 형태로 작성해주세요. (예: 1\\~2페이지, 1990\\~2000년대)
+"""
+
+PARTIAL_PDF_SUMMARY_PROMPT = """
 당신은 도서 분석 전문가입니다. 이 PDF는 하나의 도서를 분할한 파트 {part_num}/{total_parts}입니다.
 이 파트의 핵심 내용을 상세히 분석하여 다음 항목을 정리해 주세요:
 - 주요 주제/논점/스토리 전개
@@ -337,7 +355,7 @@ MERGE_SUMMARY_PROMPT = """
 --- 부분 요약 끝 ---
 
 아래의 출력 형식을 정확히 준수하여 작성해 주세요.
-""" + SUMMARY_PROMPT_TEMPLATE.replace("{series_notice}", "")
+""" + SUMMARY_PROMPT_TEMPLATE.replace("{series_notice}", "").replace("{book_content_section}", "")
 
 
 class PDFSummarizer:
@@ -463,30 +481,176 @@ class PDFSummarizer:
         pdf_paths: list[str | Path] | str | Path,
         book_title: str,
         cover_image_filename: str,
-        output_md_path: str | Path
+        output_md_path: str | Path,
+        output_source_md_path: Optional[str | Path] = None,
+        save_source: bool = False
     ) -> str:
         """
-        단일 또는 다중(시리즈물) PDF 파일들을 Gemini API로 업로드 및 종합 분석하여
-        하나의 완성된 블로그용 마크다운 파일을 생성합니다.
+        단일 또는 다중(시리즈물) PDF 도서로부터 마크다운을 로컬 추출하여 Gemini API로 분석하고
+        완성된 블로그용 서평 마크다운({도서명}_review.md)을 생성하며,
+        save_source가 True인 경우 원문 마크다운({도서명}_source.md)을 함께 저장합니다.
 
         :param pdf_paths: 대상 PDF 파일 경로(들)
         :param book_title: 기본 도서명/시리즈명
         :param cover_image_filename: 마크다운에 삽입할 1권 커버 이미지 파일명
-        :param output_md_path: 저장할 마크다운 파일 경로
-        :return: 생성된 마크다운 파일 절대 경로
+        :param output_md_path: 저장할 서평 마크다운 파일 경로
+        :param output_source_md_path: 저장할 원문 마크다운 파일 경로 (None이면 output_md_path 디렉토리에 자동 설정)
+        :param save_source: 원문 마크다운 파일 저장 여부 (기본값: False)
+        :return: 생성된 서평 마크다운 파일 절대 경로
         """
         if isinstance(pdf_paths, (str, Path)):
             pdf_paths = [pdf_paths]
         
         paths = [Path(p) for p in pdf_paths]
         output_md_path = Path(output_md_path)
+        if output_source_md_path is None:
+            output_source_md_path = output_md_path.parent / f"{book_title}_source.md"
+        else:
+            output_source_md_path = Path(output_source_md_path)
+
         is_series = len(paths) > 1
 
+        if is_series:
+            series_notice = (
+                f"## 📚 시리즈물 특별 지침\n"
+                f"- 본 도서는 총 {len(paths)}권으로 구성된 완결/연재 시리즈물입니다.\n"
+                f"- 각 권별로 단편적 요약을 나열하지 마시고, 1권부터 전체 권수를 아우르는 중심 스토리와 세계관의 발전, "
+                f"인물 간의 긴밀한 관계 변화, 시리즈 전체의 매력 포인트를 관통하는 하나의 완성도 높은 종합 서평으로 작성해 주세요."
+            )
+            display_title = f"{book_title} (전 {len(paths)}권 시리즈)"
+        else:
+            series_notice = ""
+            display_title = book_title
+
+        # 1. 로컬에서 PDF 마크다운 텍스트 추출 시도
+        extracted_texts = []
+        for idx, p in enumerate(paths, 1):
+            label = f"[{idx}/{len(paths)}권] " if is_series else ""
+            print(f"     - {label}'{p.name}' 로컬 마크다운 텍스트 추출 중...")
+            txt = extract_markdown_from_pdf(p)
+            if is_series:
+                extracted_texts.append(f"## 📖 제 {idx}권 ({p.stem})\n\n{txt}")
+            else:
+                extracted_texts.append(txt)
+
+        full_book_content = "\n\n---\n\n".join(extracted_texts).strip()
+
+        # 2. 텍스트 레이어 존재 여부 판별 (OCR 완료 vs 순수 스캔본)
+        has_text_layer = len(full_book_content) >= 50
+
+        if has_text_layer:
+            # === [도서 원문 마크다운 파일 저장 (--source 옵션 시)] ===
+            if save_source:
+                output_source_md_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(output_source_md_path, "w", encoding="utf-8") as f:
+                    f.write(full_book_content)
+                print(f"     - [✓] 도서 원문 마크다운 저장 완료: {output_source_md_path.name} ({len(full_book_content):,}자)")
+
+            # === [고속/저비용 텍스트 프롬프트 모드] ===
+            print(f"     - AI 서평 및 SEO/AEO 마크다운 생성 요청 중 (고속 텍스트 모드)...")
+
+            book_content_section = f"\n--- 📖 도서 본문 내용 시작 ---\n{full_book_content}\n--- 📖 도서 본문 내용 끝 ---\n"
+            prompt = SUMMARY_PROMPT_TEMPLATE.format(
+                book_title=display_title,
+                cover_image_filename=cover_image_filename,
+                series_notice=series_notice,
+                book_content_section=book_content_section
+            )
+
+            try:
+                response = self._generate_content_with_retry(contents=[prompt])
+                markdown_content = response.text or ""
+            except Exception as e:
+                err_str = str(e)
+                is_token_exceeded = "INVALID_ARGUMENT" in err_str and "token" in err_str.lower()
+                if not is_token_exceeded:
+                    raise e
+
+                # 토큰 초과 시 텍스트 분할 요약 모드로 전환
+                print(f"\n   [*] 📄 입력 토큰 한도 초과! 텍스트 분할 요약 모드로 자동 전환합니다...")
+                markdown_content = self._summarize_chunked_text(
+                    full_text=full_book_content,
+                    book_title=display_title,
+                    cover_image_filename=cover_image_filename,
+                    series_notice=series_notice
+                )
+        else:
+            # === [스캔 이미지 PDF 폴백 모드 (Files API 멀티모달)] ===
+            print(f"     - [!] 텍스트 레이어가 없는 스캔 이미지 PDF 감지 -> Gemini 멀티모달 파일 업로드 모드로 자동 전환...")
+            markdown_content = self._summarize_multimodal_pdf(
+                pdf_paths=paths,
+                book_title=display_title,
+                cover_image_filename=cover_image_filename,
+                series_notice=series_notice
+            )
+
+        # 3. 마크다운 후처리 및 파일 저장
+        markdown_content = postprocess_markdown(markdown_content)
+        output_md_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_md_path, "w", encoding="utf-8") as f:
+            f.write(markdown_content)
+
+        return str(output_md_path.resolve())
+
+    def _summarize_chunked_text(
+        self,
+        full_text: str,
+        book_title: str,
+        cover_image_filename: str,
+        series_notice: str,
+        num_chunks: int = 3
+    ) -> str:
+        """
+        토큰 한도를 초과하는 대용량 도서 텍스트를 N개 구간으로 분할하여 부분 요약 후 통합합니다.
+        """
+        chunk_len = len(full_text) // num_chunks
+        chunks = []
+        for i in range(num_chunks):
+            start = i * chunk_len
+            end = (i + 1) * chunk_len if i < num_chunks - 1 else len(full_text)
+            chunks.append(full_text[start:end])
+
+        print(f"     - 총 {num_chunks}개 파트로 텍스트 분할 완료. 파트별 요약을 시작합니다...")
+        partial_summaries = []
+        for idx, chunk in enumerate(chunks, 1):
+            print(f"     - [{idx}/{num_chunks}] 텍스트 파트 요약 중...")
+            part_prompt = PARTIAL_TEXT_SUMMARY_PROMPT.format(
+                book_title=book_title,
+                part_num=idx,
+                total_parts=num_chunks,
+                chunk_text=chunk
+            )
+            response = self._generate_content_with_retry(contents=[part_prompt])
+            partial_summaries.append(f"### 파트 {idx}/{num_chunks}\n{response.text or ''}")
+            print(f"       [✓] 파트 {idx} 요약 완료")
+
+        print(f"     - 부분 요약 {len(partial_summaries)}개를 통합하여 최종 서평 생성 중...")
+        merged_summaries = "\n\n".join(partial_summaries)
+        merge_prompt = MERGE_SUMMARY_PROMPT.format(
+            book_title=book_title,
+            total_parts=num_chunks,
+            series_notice=series_notice,
+            partial_summaries=merged_summaries,
+            cover_image_filename=cover_image_filename
+        )
+        response = self._generate_content_with_retry(contents=[merge_prompt])
+        return postprocess_markdown(response.text or "")
+
+    def _summarize_multimodal_pdf(
+        self,
+        pdf_paths: list[Path],
+        book_title: str,
+        cover_image_filename: str,
+        series_notice: str
+    ) -> str:
+        """
+        텍스트 레이어가 없는 스캔 PDF를 Gemini Files API로 업로드하여 멀티모달로 요약합니다.
+        """
+        is_series = len(pdf_paths) > 1
         uploaded_files = []
         try:
-            # 1. 모든 PDF 파일 순차 업로드
-            for idx, p in enumerate(paths, 1):
-                label = f"[{idx}/{len(paths)}권] " if is_series else ""
+            for idx, p in enumerate(pdf_paths, 1):
+                label = f"[{idx}/{len(pdf_paths)}권] " if is_series else ""
                 print(f"     - {label}'{p.name}' Gemini 서버로 업로드 중...")
                 with open(p, "rb") as f:
                     uf = self.client.files.upload(
@@ -498,7 +662,6 @@ class PDFSummarizer:
                     )
                 uploaded_files.append(uf)
 
-            # 2. 업로드 파일 처리 대기 (ACTIVE 상태 확인)
             for idx, uf in enumerate(uploaded_files, 1):
                 while uf.state.name == "PROCESSING":
                     label = f"[{idx}/{len(uploaded_files)}권] " if is_series else ""
@@ -509,66 +672,40 @@ class PDFSummarizer:
                 if uf.state.name == "FAILED":
                     raise RuntimeError(f"Gemini 파일 처리 실패: {uf.display_name}")
 
-            # 3. 프롬프트 구성
-            if is_series:
-                series_notice = (
-                    f"## 📚 시리즈물 특별 지침\n"
-                    f"- 본 도서는 총 {len(paths)}권으로 구성된 완결/연재 시리즈물입니다.\n"
-                    f"- 각 권별로 단편적 요약을 나열하지 마시고, 1권부터 전체 권수를 아우르는 중심 스토리와 세계관의 발전, "
-                    f"인물 간의 긴밀한 관계 변화, 시리즈 전체의 매력 포인트를 관통하는 하나의 완성도 높은 종합 서평으로 작성해 주세요."
-                )
-                display_title = f"{book_title} (전 {len(paths)}권 시리즈)"
-            else:
-                series_notice = ""
-                display_title = book_title
-
             prompt = SUMMARY_PROMPT_TEMPLATE.format(
-                book_title=display_title,
+                book_title=book_title,
                 cover_image_filename=cover_image_filename,
-                series_notice=series_notice
+                series_notice=series_notice,
+                book_content_section=""
             )
 
-            # 4. 멀티모달 Gemini 모델 호출 (자동 재시도 로직 포함)
-            print(f"     - AI 서평 및 SEO/AEO 마크다운 생성 요청 중...")
+            print(f"     - AI 서평 및 SEO/AEO 마크다운 생성 요청 중 (멀티모달 비전 모드)...")
             try:
                 response = self._generate_content_with_retry(
                     contents=[*uploaded_files, prompt]
                 )
-                markdown_content = response.text or ""
+                return response.text or ""
             except Exception as e:
                 err_str = str(e)
-                is_token_exceeded = (
-                    "INVALID_ARGUMENT" in err_str and "token" in err_str.lower()
-                )
+                is_token_exceeded = "INVALID_ARGUMENT" in err_str and "token" in err_str.lower()
                 if not is_token_exceeded:
                     raise e
 
-                # 토큰 초과 → PDF 분할 요약 모드로 전환
                 print(f"\n   [*] 📄 입력 토큰 한도 초과! PDF 분할 요약 모드로 자동 전환합니다...")
-                markdown_content = self._summarize_chunked(
-                    pdf_paths=paths,
-                    book_title=display_title,
+                return self._summarize_chunked_pdf(
+                    pdf_paths=pdf_paths,
+                    book_title=book_title,
                     cover_image_filename=cover_image_filename,
                     series_notice=series_notice
                 )
-
-            # 5. 마크다운 파일 저장 (강조 구문 공백 및 Mermaid 가독성 자동 보정 적용)
-            markdown_content = postprocess_markdown(markdown_content)
-            output_md_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(output_md_path, "w", encoding="utf-8") as f:
-                f.write(markdown_content)
-
         finally:
-            # 6. 임시 업로드 파일 정리 (오류가 발생하더라도 정리 시도)
             for uf in uploaded_files:
                 try:
                     self.client.files.delete(name=uf.name)
                 except Exception:
                     pass
 
-        return str(output_md_path.resolve())
-
-    def _summarize_chunked(
+    def _summarize_chunked_pdf(
         self,
         pdf_paths: list[Path],
         book_title: str,
@@ -577,13 +714,12 @@ class PDFSummarizer:
         num_parts: int = 3
     ) -> str:
         """
-        토큰 한도를 초과하는 대용량 PDF를 분할하여 부분 요약 후 통합합니다.
+        토큰 한도를 초과하는 대용량 스캔 PDF를 분할하여 부분 요약 후 통합합니다.
         """
         all_split_files = []
         partial_summaries = []
 
         try:
-            # 1. 모든 PDF를 분할
             for pdf_path in pdf_paths:
                 parts = split_pdf_into_parts(pdf_path, num_parts=num_parts)
                 all_split_files.extend(parts)
@@ -591,7 +727,6 @@ class PDFSummarizer:
             total_parts = len(all_split_files)
             print(f"     - 총 {total_parts}개 파트로 분할 완료. 파트별 요약을 시작합니다...")
 
-            # 2. 각 파트를 개별 업로드 → 부분 요약
             for idx, part_path in enumerate(all_split_files, 1):
                 print(f"     - [{idx}/{total_parts}] 파트 업로드 및 요약 중...")
                 uploaded = None
@@ -605,12 +740,11 @@ class PDFSummarizer:
                             )
                         )
 
-                    # 업로드 완료 대기
                     while uploaded.state.name == "PROCESSING":
                         time.sleep(3)
                         uploaded = self.client.files.get(name=uploaded.name)
 
-                    part_prompt = PARTIAL_SUMMARY_PROMPT.format(
+                    part_prompt = PARTIAL_PDF_SUMMARY_PROMPT.format(
                         part_num=idx, total_parts=total_parts
                     )
                     response = self._generate_content_with_retry(
@@ -628,7 +762,6 @@ class PDFSummarizer:
                         except Exception:
                             pass
 
-            # 3. 부분 요약들을 통합하여 최종 마크다운 생성
             print(f"     - 부분 요약 {len(partial_summaries)}개를 통합하여 최종 서평 생성 중...")
             merged_summaries = "\n\n".join(partial_summaries)
             merge_prompt = MERGE_SUMMARY_PROMPT.format(
@@ -640,10 +773,9 @@ class PDFSummarizer:
             )
 
             response = self._generate_content_with_retry(contents=[merge_prompt])
-            return postprocess_markdown(response.text or "")
+            return response.text or ""
 
         finally:
-            # 임시 분할 파일 정리 (원본 PDF 파일 제외)
             original_paths = {p.resolve() for p in pdf_paths}
             for f in all_split_files:
                 try:
@@ -656,7 +788,9 @@ class PDFSummarizer:
         self,
         pdf_path: str | Path,
         cover_image_filename: str,
-        output_md_path: str | Path
+        output_md_path: str | Path,
+        output_source_md_path: Optional[str | Path] = None,
+        save_source: bool = False
     ) -> str:
         """
         단일 PDF 요약용 편의 메서드 (기존 인터페이스 호환)
@@ -666,6 +800,8 @@ class PDFSummarizer:
             pdf_paths=[pdf_path],
             book_title=pdf_path.stem,
             cover_image_filename=cover_image_filename,
-            output_md_path=output_md_path
+            output_md_path=output_md_path,
+            output_source_md_path=output_source_md_path,
+            save_source=save_source
         )
 

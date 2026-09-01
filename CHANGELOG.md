@@ -1,5 +1,74 @@
 # CHANGELOG
 
+## [2026-09-01] - `--source` CLI 옵션을 통한 도서 원문 마크다운(_source.md) 조건부 저장 기능 추가
+
+### 변경 목적
+- 도서 PDF에서 추출한 원문 마크다운 파일(`{도서명}_source.md`)의 디스크 저장을 기본 비활성화(`False`)하고, 사용자가 `--source` (또는 `-s`) 옵션을 부여한 경우에만 선택적으로 저장할 수 있도록 개선하여 불필요한 디스크 용량 점유를 방지하고 기본 산출물을 깔끔하게 유지.
+
+### 주요 결정 사항
+1. **CLI `--source` / `-s` 옵션 추가 (`main.py`)**:
+   - `argparse`에 `--source`, `-s` 플래그(`action="store_true"`, 기본값 `False`) 추가.
+   - 메인 실행 안내 화면에 소스 마크다운 저장 옵션 활성화 여부 출력.
+   - `summarizer.summarize_series_to_markdown` 호출 시 `save_source=args.source` 전달.
+2. **원문 마크다운 조건부 저장 로직 구현 (`summarizer.py`)**:
+   - `summarize_series_to_markdown` 및 `summarize_pdf_to_markdown` 메서드에 `save_source: bool = False` 파라미터 추가.
+   - 텍스트 레이어 추출 후 `save_source`가 `True`일 때만 디스크에 `{도서명}_source.md` 파일 저장 수행.
+3. **단위 테스트 및 가이드 문서 갱신 (`test_pdf_processor.py`, `README.md`)**:
+   - `test_cli_args` 단위 테스트 추가: 기본 실행 시 `args.source == False`, `--source`/`-s` 옵션 시 `args.source == True` 검증.
+   - `save_source` 플래그에 따른 `_source.md` 파일 생성/미생성 검증 테스트 추가.
+   - `README.md` CLI 옵션 표 및 산출물 구조 가이드에 `--source` 옵션 설명 갱신.
+
+### 수정한 파일
+- `summarizer.py`: `save_source` 파라미터 추가 및 조건부 원문 마크다운 저장 적용
+- `main.py`: `--source` / `-s` CLI 인자 추가 및 요약 모듈 연동
+- `test_pdf_processor.py`: CLI 인자 및 `save_source` 조건부 저장 단위 테스트 추가
+- `README.md`: `--source` 옵션 가이드 및 산출물 설명 갱신
+- `CHANGELOG.md`: 변경 기록 추가
+
+### 테스트 결과
+- `test_pdf_processor.py` 단위 테스트 전체 정상 통과 (CLI 인자 파싱, 원문 마크다운 조건부 저장, 마크다운 추출, 볼드 공백 보정, 물결표 이스케이프, 태그 정규화, Mermaid 문법 보정, 프롬프트 포맷팅, PDF 분할, 시리즈 파싱, 북커버 추출 모두 PASS)
+- `python main.py --help` CLI 도움말 정상 동작 확인
+
+---
+
+## [2026-09-01] - OCR 완료 PDF 로컬 마크다운 추출 및 Gemini 고속 전송 & 도서 원문(_source.md) 저장 기능 추가
+
+### 변경 목적
+- 도서 PDF 파일을 Gemini Files API로 직접 업로드하던 방식을 개선하여, OCR(텍스트 레이어)이 포함된 PDF에서 `pymupdf4llm`/`PyMuPDF`를 통해 로컬에서 구조화된 마크다운 텍스트를 먼저 추출한 뒤 Gemini 프롬프트로 직접 전송함으로써 대기 시간 및 토큰 소모를 대폭 절감.
+- 추출된 도서 원문 마크다운 전체 텍스트를 `{도서명}_source.md` 파일로 디스크에 함께 저장하여 3종 산출물 체계 완성.
+
+### 주요 결정 사항
+1. **로컬 마크다운 추출 및 원문 파일 저장 구현 (`pdf_processor.py`, `summarizer.py`)**:
+   - `extract_markdown_from_pdf` 함수 추가: `pymupdf4llm.to_markdown`을 우선 활용하여 제목, 본문, 표, 서식이 보존된 마크다운을 로컬에서 즉시 추출.
+   - `summarize_series_to_markdown`에서 추출된 원문 텍스트를 `{도서명}_source.md` 파일로 디스크에 저장 (단권 및 시리즈 통합).
+2. **Gemini 요약 처리 고속화 및 스마트 폴백 (`summarizer.py`)**:
+   - 추출된 도서 마크다운 텍스트가 존재하는 경우(텍스트 레이어 있음) 구글 서버 파일 업로드 없이 순수 텍스트 프롬프트로 전송하여 고속 처리.
+   - 텍스트 레이어가 없는 순수 스캔본 PDF인 경우 기존 Gemini Files API 멀티모달 비전 방식으로 자동 폴백.
+   - 텍스트 모드 토큰 한도 초과 시 텍스트 구간 분할 요약(`_summarize_chunked_text`) 지원.
+3. **산출물 3종 세트 파일 체계 구성 (`main.py`, `README.md`)**:
+   - `{도서명}_cover.jpg` : 1페이지 고화질 북커버 이미지
+   - `{도서명}_review.md` : Gemini 생성 블로그 서평 마크다운
+   - `{도서명}_source.md` : PDF에서 추출한 도서 원문 마크다운 전체 텍스트
+4. **pymupdf4llm 내부 numpy RuntimeWarning(divide by zero in log) 음소거 처리 (`pdf_processor.py`, `main.py`)**:
+   - `pymupdf_layout`의 높이/여백 로그 연산 시 발생하는 불필요한 콘솔 경고 메시지를 `warnings.catch_warnings()` 및 `filterwarnings`로 안전하게 차단.
+5. **의존성 및 테스트 (`requirements.txt`, `test_pdf_processor.py`)**:
+   - `pymupdf4llm>=0.0.17` 의존성 추가.
+   - 마크다운 추출 및 `_source.md` 파일 저장 단위 테스트 추가.
+
+### 수정한 파일
+- `pdf_processor.py`: `extract_markdown_from_pdf` 함수 구현
+- `summarizer.py`: 마크다운 텍스트 기반 요약, `_source.md` 원문 파일 저장, 청킹 로직 구현, 멀티모달 폴백 유지
+- `main.py`: `source_md_path` 경로 전달 및 작업 진행 메시지 갱신
+- `requirements.txt`: `pymupdf4llm` 패키지 추가
+- `test_pdf_processor.py`: 마크다운 추출 및 원문 저장 단위 테스트 추가
+- `README.md`: 로컬 마크다운 추출 및 산출물 3종 구조 안내 갱신
+- `CHANGELOG.md`: 변경 기록 추가
+
+### 테스트 결과
+- `test_pdf_processor.py` 단위 테스트 전체 정상 통과 (마크다운 추출, 원문 저장, 볼드 공백 보정, 물결표 이스케이프, 태그 정규화, Mermaid 문법 보정, 프롬프트 포맷팅, PDF 분할, 시리즈 파싱, 북커버 추출 모두 PASS)
+
+---
+
 ## [2026-08-31] - 마크다운 물결표(~) 취소선 오인 방지 이스케이프(\~) 처리 및 자동 보정
 
 ### 변경 목적

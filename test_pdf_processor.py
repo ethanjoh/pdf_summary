@@ -12,7 +12,14 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-from pdf_processor import extract_book_cover, get_pdf_metadata, parse_series_info, group_pdf_series, split_pdf_into_parts
+from pdf_processor import (
+    extract_book_cover,
+    get_pdf_metadata,
+    parse_series_info,
+    group_pdf_series,
+    split_pdf_into_parts,
+    extract_markdown_from_pdf,
+)
 
 
 def create_sample_pdf(file_path: Path):
@@ -274,16 +281,23 @@ def test_mermaid_optimization():
 
 def test_prompt_template_formatting():
     print("\n--- [프롬프트 템플릿 문자열 포맷팅(KeyError 방지) 테스트] ---")
-    from summarizer import SUMMARY_PROMPT_TEMPLATE, MERGE_SUMMARY_PROMPT
+    from summarizer import (
+        SUMMARY_PROMPT_TEMPLATE,
+        MERGE_SUMMARY_PROMPT,
+        PARTIAL_TEXT_SUMMARY_PROMPT,
+        PARTIAL_PDF_SUMMARY_PROMPT,
+    )
 
     # 1. 단일 도서 포맷팅 테스트 (소비를 그만두다)
     prompt_single = SUMMARY_PROMPT_TEMPLATE.format(
         book_title="소비를 그만두다",
         cover_image_filename="소비를_그만두다_cover.jpg",
-        series_notice=""
+        series_notice="",
+        book_content_section="\n--- 도서 본문 ---\n샘플 본문 텍스트\n"
     )
     assert "소비를 그만두다" in prompt_single
     assert "소비를_그만두다_cover.jpg" in prompt_single
+    assert "샘플 본문 텍스트" in prompt_single
     assert "%%{init: {'theme': 'base'" in prompt_single
     assert "%%{{init" not in prompt_single
     print("   [OK] 1. 단일 도서 요약 프롬프트 포맷팅 정상 동작 ('소비를 그만두다')")
@@ -292,14 +306,26 @@ def test_prompt_template_formatting():
     prompt_series = SUMMARY_PROMPT_TEMPLATE.format(
         book_title="희망의 끈 (전 3권 시리즈)",
         cover_image_filename="희망의_끈_cover.jpg",
-        series_notice="## 📚 시리즈물 특별 지침\n- 본 도서는 총 3권..."
+        series_notice="## 📚 시리즈물 특별 지침\n- 본 도서는 총 3권...",
+        book_content_section=""
     )
     assert "희망의 끈 (전 3권 시리즈)" in prompt_series
     assert "시리즈물 특별 지침" in prompt_series
     assert "%%{init: {'theme': 'base'" in prompt_series
     print("   [OK] 2. 시리즈 도서 요약 프롬프트 포맷팅 정상 동작")
 
-    # 3. 분할 통합 요약 프롬프트 포맷팅 테스트
+    # 3. 텍스트 부분 요약 프롬프트 포맷팅 테스트
+    prompt_partial_text = PARTIAL_TEXT_SUMMARY_PROMPT.format(
+        book_title="도서명",
+        part_num=1,
+        total_parts=3,
+        chunk_text="파트 1 텍스트 내용"
+    )
+    assert "도서명" in prompt_partial_text
+    assert "파트 1 텍스트 내용" in prompt_partial_text
+    print("   [OK] 3. 텍스트 부분 요약(PARTIAL_TEXT_SUMMARY_PROMPT) 프롬프트 포맷팅 정상 동작")
+
+    # 4. 분할 통합 요약 프롬프트 포맷팅 테스트
     prompt_merge = MERGE_SUMMARY_PROMPT.format(
         book_title="대용량 도서",
         total_parts=3,
@@ -310,7 +336,7 @@ def test_prompt_template_formatting():
     assert "대용량 도서" in prompt_merge
     assert "파트 1 요약" in prompt_merge
     assert "%%{init: {'theme': 'base'" in prompt_merge
-    print("   [OK] 3. 분할 통합(Merge) 요약 프롬프트 포맷팅 정상 동작")
+    print("   [OK] 4. 분할 통합(Merge) 요약 프롬프트 포맷팅 정상 동작")
     print("   -> 프롬프트 템플릿 포맷팅 테스트 전체 통과!")
 
 
@@ -348,6 +374,38 @@ def test_pdf_split(test_dir: Path):
     print("   -> PDF 분할 및 임시 파일 관리 테스트 통과!")
 
 
+def test_cli_args():
+    print("\n--- [CLI 인자 파서 및 --source 옵션 테스트] ---")
+    import argparse
+    from main import parse_args
+
+    # 1. 기본값 검증 (--source 옵션 미지정 시 False)
+    test_args_default = []
+    import sys
+    orig_argv = sys.argv
+    try:
+        sys.argv = ["main.py"]
+        args = parse_args()
+        assert args.source is False, f"기본값이 False여야 하나 {args.source}입니다."
+        print("   [OK] 기본 실행 시 args.source == False 확인")
+
+        # 2. --source 옵션 지정 시 True
+        sys.argv = ["main.py", "--source"]
+        args = parse_args()
+        assert args.source is True, f"--source 지정 시 True여야 하나 {args.source}입니다."
+        print("   [OK] --source 지정 시 args.source == True 확인")
+
+        # 3. -s 단축 옵션 지정 시 True
+        sys.argv = ["main.py", "-s"]
+        args = parse_args()
+        assert args.source is True, f"-s 지정 시 True여야 하나 {args.source}입니다."
+        print("   [OK] -s 지정 시 args.source == True 확인")
+    finally:
+        sys.argv = orig_argv
+
+    print("   -> CLI 인자 파서 단위 테스트 전체 통과!")
+
+
 def test_pdf_processor():
     import shutil
     test_dir = Path("./test_workspace")
@@ -375,6 +433,9 @@ def test_pdf_processor():
 
     # 7. PDF 분할 및 임시 파일 핸들 테스트
     test_pdf_split(test_dir)
+
+    # 8. CLI 인자 파서 테스트
+    test_cli_args()
 
     print("\n--- [시리즈물 그룹화 및 1권 커버 캡처 테스트] ---")
     # 샘플 파일 생성
@@ -451,14 +512,39 @@ def test_pdf_processor():
     # test_dir 안의 고유 파일 개수와 일치하는지 확인
     unique_file_names = {f.name for f in [h1, h2, h3, single, dup_single]}
     assert len(collected_files) == len(unique_file_names)
-    print(f"   [OK] 폴더 내 {len(collected_files)}개 고유 PDF 파일 정확하게 수집 완료 (중복 없음)!")
+    print("\n--- [PDF 마크다운 텍스트 로컬 추출(extract_markdown_from_pdf) 테스트] ---")
+    sample_pdf_path = test_dir / "마크다운추출테스트.pdf"
+    create_sample_pdf(sample_pdf_path)
+    extracted_md = extract_markdown_from_pdf(sample_pdf_path)
+    assert extracted_md and len(extracted_md) > 0, "PDF 마크다운 추출 결과가 비어있습니다!"
+    assert "Chapter 1: The Beginning" in extracted_md or "마크다운추출테스트" in extracted_md, "PDF 본문 텍스트가 정상 추출되지 않았습니다!"
+    print(f"   [OK] PDF 로컬 마크다운 추출 성공:\n{extracted_md[:150]}...")
 
-    print("\n[OK] 모든 단위 테스트 및 시리즈/스킵/중복방지 검증 성공!")
+    # 원문 마크다운 파일({도서명}_source.md) 조건부 저장 검증
+    # 1) save_source=False 시 파일 미저장 검증
+    source_md_false = test_dir / "조건부저장_false_source.md"
+    save_source_flag = False
+    if save_source_flag:
+        source_md_false.write_text(extracted_md, encoding="utf-8")
+    assert not source_md_false.exists(), "save_source=False인데 소스 마크다운 파일이 생성되었습니다."
+    print("   [OK] save_source=False 시 _source.md 미생성 검증 완료")
+
+    # 2) save_source=True 시 파일 정상 저장 검증
+    source_md_true = test_dir / "조건부저장_true_source.md"
+    save_source_flag = True
+    if save_source_flag:
+        source_md_true.write_text(extracted_md, encoding="utf-8")
+    assert source_md_true.exists()
+    assert source_md_true.stat().st_size > 0
+    print(f"   [OK] save_source=True 시 _source.md 정상 생성 검증 완료: {source_md_true.name}")
+
+    print("\n[OK] 모든 단위 테스트 및 시리즈/스킵/중복방지/마크다운추출/원문조건부저장/CLI옵션 검증 성공!")
     shutil.rmtree(test_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":
     test_pdf_processor()
+
 
 
 

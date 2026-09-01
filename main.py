@@ -1,10 +1,15 @@
 # 스캔된 PDF 도서를 일괄 처리하여 북커버 이미지와 블로그용 마크다운을 생성하는 메인 실행 스크립트
 import os
 import sys
+import warnings
 import argparse
 from pathlib import Path
 from dotenv import load_dotenv
 from tqdm import tqdm
+
+# pymupdf4llm 내부 레이아웃 연산 중 발생하는 런타임 경고 음소거
+warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*divide by zero.*")
+warnings.filterwarnings("ignore", category=RuntimeWarning, module=".*pymupdf.*")
 
 from pdf_processor import extract_book_cover, get_pdf_metadata, group_pdf_series
 from summarizer import PDFSummarizer
@@ -57,6 +62,11 @@ def parse_args():
         action="store_true",
         help="이미 생성된 마크다운/커버 이미지가 있어도 건너뛰지 않고 다시 생성"
     )
+    parser.add_argument(
+        "--source", "-s",
+        action="store_true",
+        help="PDF에서 추출한 도서 원문 마크다운 파일({도서명}_source.md)을 함께 저장 (기본값: False)"
+    )
     return parser.parse_args()
 
 
@@ -101,6 +111,7 @@ def main():
     print(f" - 사용할 모델: {args.model}")
     print(f" - 작업 간 대기 시간(쿨다운): {args.delay}초")
     print(f" - 기존 파일 덮어쓰기: {'활성화' if args.overwrite else '비활성화 (기존 마크다운 완료본 건너뜀)'}")
+    print(f" - 소스 마크다운 저장: {'활성화' if args.source else '비활성화'}")
     print("=" * 60)
 
     # PDF 파일 목록 검색 (대소문자 무관 및 중복 방지)
@@ -151,6 +162,8 @@ def main():
         cover_path = output_path / cover_filename
         md_filename = f"{title}_review.md"
         md_path = output_path / md_filename
+        source_md_filename = f"{title}_source.md"
+        source_md_path = output_path / source_md_filename
 
         # 이미 마크다운 파일이 생성되어 있는지 확인
         if not args.overwrite:
@@ -186,15 +199,17 @@ def main():
 
             # 2. AI 내용 분석 및 통합 마크다운 생성
             if is_series:
-                print(f"   - [2단계: AI 분석] 시리즈 전체({len(files)}권) Gemini 업로드 및 마크다운 생성 중...")
+                print(f"   - [2단계: AI 분석] 시리즈 전체({len(files)}권) 마크다운 분석 및 서평 생성 중...")
             else:
-                print(f"   - [2단계: AI 분석] Gemini PDF 업로드 및 마크다운 생성 중...")
+                print(f"   - [2단계: AI 분석] 도서 마크다운 분석 및 서평 생성 중...")
 
             summarizer.summarize_series_to_markdown(
                 pdf_paths=files,
                 book_title=title,
                 cover_image_filename=cover_filename,
-                output_md_path=md_path
+                output_md_path=md_path,
+                output_source_md_path=source_md_path,
+                save_source=args.source
             )
             print(f"     [✓] 마크다운 리뷰 생성 완료: {md_path.name}")
             print(f"   [완료] '{title}' 도서 작업이 성공적으로 종료되었습니다.")
