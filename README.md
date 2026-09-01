@@ -133,7 +133,11 @@ output/
 ## 🛠️ 기술 스택
 
 - **언어**: Python 3.10+
-- **LLM SDK**: `google-genai` (Gemini 3.7 Flash, 3.6 Flash)
-- **PDF 엔진**: `PyMuPDF` (북커버 렌더링, 메타데이터 추출, 대용량 PDF 분할)
+- **LLM SDK / AI**: `google-genai` (Gemini 3.7 Flash, 3.6 Flash)
+- **PDF 엔진 & 마크다운 추출**: 
+  - `PyMuPDF` (북커버 렌더링, 메타데이터 추출, 대용량 PDF 분할)
+  - `pymupdf4llm` (PDF 구조 분석 및 로컬 고품질 마크다운 텍스트 추출)
+- **시각화 (다이어그램)**: `Mermaid.js` (인물 관계도 및 핵심 개념 체계도 다이어그램)
 - **진행률 표시**: `tqdm`
 - **환경 변수**: `python-dotenv`
+- **테스트**: `unittest` (내장 단위 테스트 스위트)

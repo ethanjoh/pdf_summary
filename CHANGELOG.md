@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## [2026-09-01] - README.md 기술 스택 최신화 (pymupdf4llm, Mermaid, unittest 추가)
+
+### 변경 목적
+- 프로젝트에 새롭게 도입된 로컬 마크다운 추출 라이브러리(`pymupdf4llm`) 및 시각화/테스트 도구(`Mermaid.js`, `unittest`)를 `README.md` 기술 스택 목록에 정확히 반영하여 문서 최신성 및 일관성 유지.
+
+### 주요 결정 사항
+1. **기술 스택 섹션 갱신 (`README.md`)**:
+   - `pymupdf4llm` 추가: PDF 구조 분석 및 로컬 고품질 마크다운 텍스트 추출 역할 명시
+   - `PyMuPDF` 역할 상세화 (북커버 렌더링, 메타데이터 추출, 대용량 PDF 분할)
+   - `Mermaid.js` (인물 관계도 및 핵심 개념 체계도 다이어그램) 및 `unittest` (내장 단위 테스트 스위트) 항목 추가
+
+### 수정한 파일
+- `README.md`: `## 🛠️ 기술 스택` 항목 갱신
+- `CHANGELOG.md`: 변경 사항 기록
+
+### 테스트 결과
+- `test_pdf_processor.py` 단위 테스트 전체 정상 통과
+- `README.md` 내용 및 기술 스택 일치 확인
+
+---
+
 ## [2026-09-01] - `--source` CLI 옵션을 통한 도서 원문 마크다운(_source.md) 조건부 저장 기능 추가
 
 ### 변경 목적
