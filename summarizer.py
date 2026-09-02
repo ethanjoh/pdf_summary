@@ -557,34 +557,73 @@ class PDFSummarizer:
                     f.write(full_book_content)
                 print(f"     - [✓] 도서 원문 마크다운 저장 완료: {output_source_md_path.name} ({len(full_book_content):,}자)")
 
-            # === [고속/저비용 텍스트 프롬프트 모드] ===
-            print(f"     - AI 서평 및 SEO/AEO 마크다운 생성 요청 중 (고속 텍스트 모드)...")
+            # [장편 시리즈 최적화: 3권 이상이거나 총 텍스트가 30만 자를 초과하는 시리즈]
+            is_large_series = is_series and (len(paths) >= 3 or len(full_book_content) > 300_000)
 
-            book_content_section = f"\n--- 📖 도서 본문 내용 시작 ---\n{full_book_content}\n--- 📖 도서 본문 내용 끝 ---\n"
-            prompt = SUMMARY_PROMPT_TEMPLATE.format(
-                book_title=display_title,
-                cover_image_filename=cover_image_filename,
-                series_notice=series_notice,
-                book_content_section=book_content_section
-            )
+            if is_large_series:
+                print(f"     - [📚 장편 시리즈 최적화] 총 {len(paths)}권 권별 핵심 요약 후 최종 통합 파이프라인 가동...")
+                partial_summaries = []
+                for idx, p in enumerate(paths, 1):
+                    label = f"[{idx}/{len(paths)}권] '{p.name}'"
+                    print(f"     - {label} 권별 핵심 요약 생성 중...")
+                    vol_text = extract_markdown_from_pdf(p)
+                    if not vol_text.strip():
+                        vol_text = f"(제 {idx}권 내용 추출)"
+                    part_prompt = PARTIAL_TEXT_SUMMARY_PROMPT.format(
+                        book_title=f"{book_title} 제{idx}권 ({p.stem})",
+                        part_num=idx,
+                        total_parts=len(paths),
+                        chunk_text=vol_text
+                    )
+                    response = self._generate_content_with_retry(contents=[part_prompt])
+                    partial_summaries.append(f"### 제{idx}권 ({p.stem}) 핵심 요약\n{response.text or ''}")
+                    print(f"       [✓] {label} 요약 완료")
+                    if idx < len(paths):
+                        print(f"       [*] ⏳ 권별 호출 간 안전 쿨다운 대기 중 (15초)...")
+                        time.sleep(15.0)
 
-            try:
-                response = self._generate_content_with_retry(contents=[prompt])
+                print(f"       [*] ⏳ 최종 시리즈 종합 서평 생성 전 대기 중 (15초)...")
+                time.sleep(15.0)
+                print(f"     - 전 {len(paths)}권 권별 요약들을 종합하여 최종 통합 서평 생성 중...")
+                merged_summaries = "\n\n".join(partial_summaries)
+                merge_prompt = MERGE_SUMMARY_PROMPT.format(
+                    book_title=display_title,
+                    total_parts=len(paths),
+                    series_notice=series_notice,
+                    partial_summaries=merged_summaries,
+                    cover_image_filename=cover_image_filename
+                )
+                response = self._generate_content_with_retry(contents=[merge_prompt])
                 markdown_content = response.text or ""
-            except Exception as e:
-                err_str = str(e)
-                is_token_exceeded = "INVALID_ARGUMENT" in err_str and "token" in err_str.lower()
-                if not is_token_exceeded:
-                    raise e
+            else:
+                # === [일반 도서 및 소형 시리즈: 고속 1회 텍스트 프롬프트 모드] ===
+                print(f"     - AI 서평 및 SEO/AEO 마크다운 생성 요청 중 (고속 텍스트 모드)...")
 
-                # 토큰 초과 시 텍스트 분할 요약 모드로 전환
-                print(f"\n   [*] 📄 입력 토큰 한도 초과! 텍스트 분할 요약 모드로 자동 전환합니다...")
-                markdown_content = self._summarize_chunked_text(
-                    full_text=full_book_content,
+                book_content_section = f"\n--- 📖 도서 본문 내용 시작 ---\n{full_book_content}\n--- 📖 도서 본문 내용 끝 ---\n"
+                prompt = SUMMARY_PROMPT_TEMPLATE.format(
                     book_title=display_title,
                     cover_image_filename=cover_image_filename,
-                    series_notice=series_notice
+                    series_notice=series_notice,
+                    book_content_section=book_content_section
                 )
+
+                try:
+                    response = self._generate_content_with_retry(contents=[prompt])
+                    markdown_content = response.text or ""
+                except Exception as e:
+                    err_str = str(e)
+                    is_token_exceeded = "INVALID_ARGUMENT" in err_str and "token" in err_str.lower()
+                    if not is_token_exceeded:
+                        raise e
+
+                    # 토큰 초과 시 텍스트 분할 요약 모드로 전환
+                    print(f"\n   [*] 📄 입력 토큰 한도 초과! 텍스트 분할 요약 모드로 자동 전환합니다...")
+                    markdown_content = self._summarize_chunked_text(
+                        full_text=full_book_content,
+                        book_title=display_title,
+                        cover_image_filename=cover_image_filename,
+                        series_notice=series_notice
+                    )
         else:
             # === [스캔 이미지 PDF 폴백 모드 (Files API 멀티모달)] ===
             print(f"     - [!] 텍스트 레이어가 없는 스캔 이미지 PDF 감지 -> Gemini 멀티모달 파일 업로드 모드로 자동 전환...")
@@ -634,7 +673,12 @@ class PDFSummarizer:
             response = self._generate_content_with_retry(contents=[part_prompt])
             partial_summaries.append(f"### 파트 {idx}/{num_chunks}\n{response.text or ''}")
             print(f"       [✓] 파트 {idx} 요약 완료")
+            if idx < num_chunks:
+                print(f"       [*] ⏳ 분할 파트 간 토큰 한도(TPM) 보호 대기 중 (15초)...")
+                time.sleep(15.0)
 
+        print(f"       [*] ⏳ 최종 통합 서평 생성 전 대기 중 (15초)...")
+        time.sleep(15.0)
         print(f"     - 부분 요약 {len(partial_summaries)}개를 통합하여 최종 서평 생성 중...")
         merged_summaries = "\n\n".join(partial_summaries)
         merge_prompt = MERGE_SUMMARY_PROMPT.format(
@@ -765,6 +809,9 @@ class PDFSummarizer:
                         f"### 파트 {idx}/{total_parts}\n{response.text or ''}"
                     )
                     print(f"       [✓] 파트 {idx} 요약 완료")
+                    if idx < total_parts:
+                        print(f"       [*] ⏳ 분할 파트 간 토큰 한도(TPM) 보호 대기 중 (15초)...")
+                        time.sleep(15.0)
 
                 finally:
                     if uploaded:
@@ -773,6 +820,8 @@ class PDFSummarizer:
                         except Exception:
                             pass
 
+            print(f"       [*] ⏳ 최종 통합 서평 생성 전 대기 중 (15초)...")
+            time.sleep(15.0)
             print(f"     - 부분 요약 {len(partial_summaries)}개를 통합하여 최종 서평 생성 중...")
             merged_summaries = "\n\n".join(partial_summaries)
             merge_prompt = MERGE_SUMMARY_PROMPT.format(

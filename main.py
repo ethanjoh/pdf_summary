@@ -28,10 +28,11 @@ def parse_args():
         description="스캔된 PDF 도서 일괄 분석 및 블로그용 마크다운/북커버 이미지 생성기"
     )
     parser.add_argument(
-        "--input_dir", "-i",
+        "--input", "--input_dir", "-i", "--file", "-f",
         type=str,
+        dest="input_dir",
         default=os.environ.get("DEFAULT_INPUT_DIR", "./sample_pdfs"),
-        help="PDF 파일들이 위치한 입력 폴더 경로"
+        help="PDF 파일들이 위치한 입력 폴더 경로 또는 특정 단일 PDF 파일 경로"
     )
     parser.add_argument(
         "--output_dir", "-o",
@@ -96,33 +97,70 @@ def main():
     input_path = Path(args.input_dir).resolve()
     base_output_path = Path(args.output_dir).resolve()
 
-    if not input_path.exists() or not input_path.is_dir():
-        print(f"[!] 입력 폴더를 찾을 수 없습니다: {input_path}")
-        print("입력 폴더를 생성하고 PDF 파일들을 넣어주세요.")
+    if not input_path.exists():
+        print(f"[!] 입력 경로를 찾을 수 없습니다: {input_path}")
+        print("경로가 올바른지 확인해 주세요.")
         sys.exit(1)
 
-    # 입력 폴더명을 서브폴더명으로 사용하여 결과물 분리 저장
-    output_path = base_output_path / input_path.name
+    is_single_file = input_path.is_file()
+    detected_series_title = None
+    if is_single_file:
+        if input_path.suffix.lower() != ".pdf":
+            print(f"[!] PDF 파일이 아닙니다: {input_path}")
+            sys.exit(1)
+
+        parent_dir = input_path.parent
+        output_path = base_output_path / parent_dir.name
+
+        # 파일명이 시리즈 패턴(예: '상도 1', '해리포터 2권')을 포함하는지 확인
+        base_title, vol_num = parse_series_info(input_path.stem)
+        if vol_num > 0:
+            # 같은 폴더 내 동일 시리즈명을 가진 모든 PDF 파일 자동 검색 및 수집
+            series_files = sorted(
+                list({
+                    f.resolve(): f for f in parent_dir.iterdir()
+                    if f.is_file() and f.suffix.lower() == ".pdf" and parse_series_info(f.stem)[0] == base_title
+                }.values()),
+                key=lambda p: (parse_series_info(p.stem)[1], p.name)
+            )
+            if len(series_files) > 1:
+                pdf_files = series_files
+                detected_series_title = base_title
+            else:
+                pdf_files = [input_path]
+        else:
+            pdf_files = [input_path]
+    elif input_path.is_dir():
+        # 입력 폴더명을 서브폴더명으로 사용하여 결과물 분리 저장
+        output_path = base_output_path / input_path.name
+        # PDF 파일 목록 검색 (대소문자 무관 및 중복 방지)
+        pdf_files = sorted(
+            list({f.resolve(): f for f in input_path.iterdir() if f.is_file() and f.suffix.lower() == ".pdf"}.values()),
+            key=lambda p: p.name
+        )
+        if not pdf_files:
+            print(f"[*] '{input_path}' 폴더에 PDF 파일이 없습니다.")
+            sys.exit(0)
+    else:
+        print(f"[!] 유효한 파일 또는 폴더가 아닙니다: {input_path}")
+        sys.exit(1)
 
     print("┌" + "─" * 68 + "┐")
     print("│  📚 PDF 도서 요약 & 블로그 마크다운 생성기 (PDF Book Summarizer)  │")
     print("├" + "─" * 68 + "┤")
-    print(f"│  📁 입력 폴더     : {input_path}")
-    print(f"│  💾 출력 폴더     : {output_path}")
-    print(f"│  🤖 기본 AI 모델  : {args.model}")
-    print(f"│  ⏱️  작업 간 쿨다운: {args.delay}초")
-    print(f"│  🔄 기존 덮어쓰기 : {'활성화' if args.overwrite else '비활성화 (기존 마크다운 완료본 스킵)'}")
-    print(f"│  📝 소스 원문저장 : {'활성화 (--source)' if args.source else '비활성화'}")
+    if is_single_file:
+        if detected_series_title and len(pdf_files) > 1:
+            print(f"│  📚 지정 도서(시리즈): '{detected_series_title}' (동일 폴더 내 총 {len(pdf_files)}권 자동 수집)")
+        else:
+            print(f"│  📄 지정 도서(단일)  : {input_path.name}")
+    else:
+        print(f"│  📁 입력 폴더       : {input_path}")
+    print(f"│  💾 출력 폴더       : {output_path}")
+    print(f"│  🤖 기본 AI 모델    : {args.model}")
+    print(f"│  ⏱️  작업 간 쿨다운  : {args.delay}초")
+    print(f"│  🔄 기존 덮어쓰기   : {'활성화' if args.overwrite else '비활성화 (기존 마크다운 완료본 스킵)'}")
+    print(f"│  📝 소스 원문저장   : {'활성화 (--source)' if args.source else '비활성화'}")
     print("└" + "─" * 68 + "┘")
-
-    # PDF 파일 목록 검색 (대소문자 무관 및 중복 방지)
-    pdf_files = sorted(
-        list({f.resolve(): f for f in input_path.iterdir() if f.is_file() and f.suffix.lower() == ".pdf"}.values()),
-        key=lambda p: p.name
-    )
-    if not pdf_files:
-        print(f"[*] '{input_path}' 폴더에 PDF 파일이 없습니다.")
-        sys.exit(0)
 
     output_path.mkdir(parents=True, exist_ok=True)
 

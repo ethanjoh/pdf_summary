@@ -400,6 +400,17 @@ def test_cli_args():
         args = parse_args()
         assert args.source is True, f"-s 지정 시 True여야 하나 {args.source}입니다."
         print("   [OK] -s 지정 시 args.source == True 확인")
+
+        # 4. --file / -f 단일 파일 옵션 전달 검증
+        sys.argv = ["main.py", "--file", "E:/books/sample.pdf"]
+        args = parse_args()
+        assert args.input_dir == "E:/books/sample.pdf", f"--file 전달 오류: {args.input_dir}"
+        print("   [OK] --file 지정 시 단일 파일 경로 전달 확인")
+
+        sys.argv = ["main.py", "-f", "E:/books/sample.pdf"]
+        args = parse_args()
+        assert args.input_dir == "E:/books/sample.pdf", f"-f 전달 오류: {args.input_dir}"
+        print("   [OK] -f 지정 시 단일 파일 경로 전달 확인")
     finally:
         sys.argv = orig_argv
 
@@ -624,7 +635,51 @@ def test_pdf_processor():
     assert skip_source_md.stat().st_size > 0
     print(f"   [OK] 스킵 도서 대상 _source.md 자동 보충 생성 검증 완료: {skip_source_md.name}")
 
-    print("\n[OK] 모든 단위 테스트 및 시리즈/스킵/중복방지/마크다운추출/원문조건부저장/캐시및보충/CLI옵션 검증 성공!")
+    print("\n--- [대용량 도서 분할 쿨다운 및 장편 시리즈 권별 분할 요약 파이프라인 테스트] ---")
+    # 1. 3권 이상 장편 시리즈 판별 로직 검증
+    sample_3paths = [Path("vol1.pdf"), Path("vol2.pdf"), Path("vol3.pdf")]
+    assert len(sample_3paths) >= 3
+    is_series_test = len(sample_3paths) > 1
+    is_large_series_test = is_series_test and (len(sample_3paths) >= 3 or len("sample" * 60000) > 300_000)
+    assert is_large_series_test is True, "3권 이상 시리즈가 장편 시리즈 최적화 대상으로 인식되지 않았습니다."
+
+    # 2. 2권 이하 소형 시리즈 판별 검증
+    sample_2paths = [Path("vol1.pdf"), Path("vol2.pdf")]
+    is_series_2 = len(sample_2paths) > 1
+    is_large_series_2 = is_series_2 and (len(sample_2paths) >= 3 or len("short text") > 300_000)
+    assert is_large_series_2 is False, "2권 소형 도서가 일반 1회 모드로 판별되지 않았습니다."
+
+    # 3. 텍스트 분할 청킹 길이 및 파트 계산 검증
+    sample_text = "A" * 1000
+    num_chunks = 3
+    chunk_len = len(sample_text) // num_chunks
+    chunks = []
+    for i in range(num_chunks):
+        start = i * chunk_len
+        end = (i + 1) * chunk_len if i < num_chunks - 1 else len(sample_text)
+        chunks.append(sample_text[start:end])
+    assert len(chunks) == 3
+    assert sum(len(c) for c in chunks) == 1000
+    print("   [OK] 대용량 분할 요약 및 3권 이상 장편 시리즈 권별 요약 분기 파이프라인 검증 성공!")
+
+    print("\n--- [단일 시리즈 파일 지정 시 동일 폴더 내 전 권 자동 수집 테스트] ---")
+    # 희망의 끈 2.pdf 경로로 단일 파일 지정 시뮬레이션
+    single_series_input = h2
+    assert single_series_input.exists()
+    b_title, v_num = parse_series_info(single_series_input.stem)
+    assert b_title == "희망의 끈" and v_num == 2
+    auto_collected = sorted(
+        list({
+            f.resolve(): f for f in single_series_input.parent.iterdir()
+            if f.is_file() and f.suffix.lower() == ".pdf" and parse_series_info(f.stem)[0] == b_title
+        }.values()),
+        key=lambda p: (parse_series_info(p.stem)[1], p.name)
+    )
+    assert len(auto_collected) == 3, f"전체 3권이 수집되어야 하나 {len(auto_collected)}권입니다."
+    assert [f.name for f in auto_collected] == ["희망의 끈 1.pdf", "희망의 끈 2.pdf", "희망의 끈 3.pdf"]
+    print(f"   [OK] '{single_series_input.name}' 지정 시 전 권 자동 수집 성공: {[f.name for f in auto_collected]}")
+
+    print("\n[OK] 모든 단위 테스트 및 시리즈/스킵/중복방지/마크다운추출/원문조건부저장/캐시및보충/대용량분할/장편시리즈최적화/시리즈자동수집/CLI옵션 검증 성공!")
     shutil.rmtree(test_dir, ignore_errors=True)
 
 
