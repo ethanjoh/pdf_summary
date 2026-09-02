@@ -61,6 +61,12 @@ Python 3.10 이상 환경에서 의존성 라이브러리를 설치합니다.
 pip install -r requirements.txt
 ```
 
+> **💡 의존성 호환성 팁**:
+> 만약 기존 환경의 패키지 버전 불일치로 인해 `pydantic-core` 관련 `SystemError`가 발생하는 경우, 아래 명령어로 호환 패키지를 일괄 정렬할 수 있습니다.
+> ```bash
+> pip install -r requirements.txt --upgrade
+> ```
+
 ### 2. Google Gemini API 키 설정
 `.env.example` 파일을 복사하여 `.env` 파일을 만들고 본인의 API 키를 입력합니다.
 ([Google AI Studio](https://aistudio.google.com/app/apikey)에서 무료로 발급 가능)
@@ -136,6 +142,7 @@ output/
 
 - **언어**: Python 3.10+
 - **LLM SDK / AI**: `google-genai` (Gemini 3.7 Flash, 3.6 Flash)
+- **데이터 모델링 & 유효성 검증**: `pydantic`, `pydantic-core`
 - **PDF 엔진 & 마크다운 추출**: 
   - `PyMuPDF` (북커버 렌더링, 메타데이터 추출, 대용량 PDF 분할)
   - `pymupdf4llm` (PDF 구조 분석 및 로컬 고품질 마크다운 텍스트 추출)

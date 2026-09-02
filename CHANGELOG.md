@@ -1,5 +1,35 @@
 # CHANGELOG
 
+## [2026-09-02] - pydantic 및 pydantic-core 버전 호환성 확보, 의존성 명시 및 문서 갱신
+
+### 변경 목적
+- Python 3.13 환경에서 `pydantic`(`2.13.5`)과 `pydantic-core`(`2.48.0`) 간의 버전 불일치로 인해 `google.genai` 모듈 임포트 시 발생하던 `SystemError: The installed pydantic-core version (2.48.0) is incompatible with the current pydantic version, which requires 2.46.5` 오류를 해결.
+- 다른 환경이나 신규 설치 시 동일한 버전 충돌이 재발하지 않도록 `requirements.txt`와 `README.md` 가이드 및 기술 스택을 갱신하고 GitHub 원격 저장소에 동기화.
+
+### 주요 결정 사항
+1. **환경 내 의존성 버전 정렬**:
+   - `pydantic 2.13.5`가 요구하는 정확한 호환 버전인 `pydantic-core==2.46.5`로 환경 패키지를 재설치하여 임포트 오류 즉시 해결.
+2. **`requirements.txt` 의존성 명시 강화**:
+   - `pydantic>=2.12.5`, `pydantic-core>=2.46.5`를 명시하여 패키지 설치 시 호환 버전이 우선적으로 보장되도록 설정.
+3. **`README.md` 문서 최신화**:
+   - 빠른 시작 패키지 설치 섹션에 `pydantic-core` 버전 불일치 발생 시 원클릭 해결 팁(`pip install -r requirements.txt --upgrade`) 추가.
+   - 기술 스택 섹션에 `pydantic`, `pydantic-core` (데이터 모델링 및 유효성 검증) 항목 추가.
+4. **GitHub 원격 저장소 동기화**:
+   - `main` 브랜치 기준 변경 사항 커밋 및 원격 푸시 완료.
+
+### 수정한 파일
+- `requirements.txt`: `pydantic`, `pydantic-core` 의존성 명시
+- `README.md`: 설치 팁 및 기술 스택 갱신
+- `CHANGELOG.md`: 문제 원인 분석, 조치 및 동기화 내용 기록
+
+### 테스트 결과
+- `python -c "import google.genai"` 모듈 임포트 정상 확인
+- `test_pdf_processor.py` 전체 단위 테스트 정상 통과 (14개 항목 모두 PASS)
+- `python main.py --help` CLI 도움말 정상 작동 확인
+- `git push origin main` 정상 완료
+
+---
+
 ## [2026-09-01] - 도서 원문 마크다운(_source.md) 캐싱 로드 및 스킵 도서 리소스 자동 보충 구현
 
 ### 변경 목적
