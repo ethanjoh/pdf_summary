@@ -55,13 +55,15 @@ def extract_book_cover(
     return str(output_image_path.resolve())
 
 
-def extract_markdown_from_pdf(pdf_path: str | Path) -> str:
+def extract_markdown_from_pdf(pdf_path: str | Path, ignore_images: bool = True) -> str:
     """
     PDF 파일에서 텍스트 및 구조화된 서식(헤더, 본문, 표 등)을 추출하여 마크다운(Markdown) 문자열로 반환합니다.
     - pymupdf4llm 라이브러리를 우선 활용하여 고품질 마크다운을 추출합니다.
+    - ignore_images=True 옵션으로 본문 내 이미지 파싱 연산을 생략하여 추출 속도를 대폭 향상합니다.
     - pymupdf4llm 미설치 또는 예외 시, PyMuPDF 내장 텍스트 추출로 자동 폴백합니다.
 
     :param pdf_path: 대상 PDF 파일 경로
+    :param ignore_images: 본문 이미지 파싱 생략 여부 (기본값 True)
     :return: 추출된 마크다운/텍스트 문자열
     """
     pdf_path = Path(pdf_path)
@@ -73,7 +75,7 @@ def extract_markdown_from_pdf(pdf_path: str | Path) -> str:
         import pymupdf4llm
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            md_text = pymupdf4llm.to_markdown(str(pdf_path))
+            md_text = pymupdf4llm.to_markdown(str(pdf_path), ignore_images=ignore_images)
         if md_text and md_text.strip():
             return md_text.strip()
     except Exception:

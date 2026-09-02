@@ -529,16 +529,25 @@ class PDFSummarizer:
 
         # 1. 로컬에서 도서 원문 마크다운 텍스트 준비 (기존 _source.md 캐시 우선 확인)
         has_cached_source = output_source_md_path.exists() and output_source_md_path.stat().st_size > 0
+        volume_texts = []
         if has_cached_source:
             with open(output_source_md_path, "r", encoding="utf-8") as f:
                 full_book_content = f.read().strip()
             print(f"     - [⚡ 캐시 활용] 기존 도서 원문 마크다운 로드 완료: {output_source_md_path.name} ({len(full_book_content):,}자)")
+
+            # 캐시된 본문에서 시리즈 도서인 경우 권별 텍스트 분리 복원
+            if is_series and "## 📖 제 " in full_book_content:
+                parts = re.split(r'## 📖 제 \d+권 \([^)]+\)\n\n', full_book_content)
+                parts = [p.strip() for p in parts if p.strip()]
+                if len(parts) == len(paths):
+                    volume_texts = parts
         else:
             extracted_texts = []
             for idx, p in enumerate(paths, 1):
                 label = f"[{idx}/{len(paths)}권] " if is_series else ""
                 print(f"     - {label}'{p.name}' 로컬 마크다운 텍스트 추출 중...")
                 txt = extract_markdown_from_pdf(p)
+                volume_texts.append(txt)
                 if is_series:
                     extracted_texts.append(f"## 📖 제 {idx}권 ({p.stem})\n\n{txt}")
                 else:
@@ -566,7 +575,11 @@ class PDFSummarizer:
                 for idx, p in enumerate(paths, 1):
                     label = f"[{idx}/{len(paths)}권] '{p.name}'"
                     print(f"     - {label} 권별 핵심 요약 생성 중...")
-                    vol_text = extract_markdown_from_pdf(p)
+                    # 1회차 추출본 또는 캐시에서 복원된 텍스트 재사용 (중복 추출 생략)
+                    if idx - 1 < len(volume_texts) and volume_texts[idx - 1]:
+                        vol_text = volume_texts[idx - 1]
+                    else:
+                        vol_text = extract_markdown_from_pdf(p)
                     if not vol_text.strip():
                         vol_text = f"(제 {idx}권 내용 추출)"
                     part_prompt = PARTIAL_TEXT_SUMMARY_PROMPT.format(

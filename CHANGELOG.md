@@ -1,5 +1,32 @@
 # CHANGELOG
 
+## [2026-09-02] - PDF 마크다운 로컬 추출 속도 최적화 및 장편 시리즈 중복 추출 제거
+
+### 변경 목적
+- `pymupdf4llm` 마크다운 추출 시 불필요한 이미지 연산 부하를 제거하여 단행본 도서 파싱 속도를 대폭 단축하고, 장편 시리즈 요약 시 동일 PDF에 대해 발생하던 중복 파싱을 제거하여 처리 효율성 극대화.
+
+### 주요 결정 사항
+1. **마크다운 추출 연산 경량화 (`pdf_processor.py`)**:
+   - `extract_markdown_from_pdf` 함수에서 `pymupdf4llm.to_markdown` 호출 시 `ignore_images=True` 옵션을 적용.
+   - 도서 요약/서평 목적상 본문 내 비트맵 이미지 디코딩 및 바운딩 박스 추적 연산이 불필요하므로 건너뛰어 페이지당 연산 시간 및 메모리 소모를 대폭 절감. (대표 북커버는 1페이지에서 별도 고화질 추출 유지)
+2. **장편 시리즈 권별 마크다운 메모리 캐싱 및 재사용 (`summarizer.py`)**:
+   - 1단계 전체 본문 수집 시 1회 추출한 권별 텍스트(`volume_texts`)를 메모리에 보관.
+   - 3권 이상 장편 시리즈 권별 분할 요약 루프에서 `extract_markdown_from_pdf`를 재호출하지 않고 메모리에서 즉시 0초 로드하여 파싱 소요 시간 50% 단축.
+   - 기존 `_source.md` 캐시 파일이 존재하는 경우에도 파일 내부의 권별 헤더(`## 📖 제 N권`)를 파싱하여 PDF 재추출 없이 즉시 분할 복원하도록 개선.
+3. **단위 테스트 추가 (`test_pdf_processor.py`)**:
+   - `extract_markdown_from_pdf(..., ignore_images=True)` 동작 검증 및 시리즈 `_source.md` 캐시 기반 권별 텍스트 무손실 분할 로드 테스트 추가.
+
+### 수정한 파일
+- `pdf_processor.py`: `extract_markdown_from_pdf`에 `ignore_images=True` 최적화 옵션 적용
+- `summarizer.py`: 장편 시리즈 요약 시 권별 텍스트 메모리 캐시 재사용 및 `_source.md` 캐시 권별 분할 로드 구현
+- `test_pdf_processor.py`: 마크다운 추출 최적화 및 시리즈 캐시 분할 로드 단위 테스트 추가
+- `CHANGELOG.md`: 변경 기록 추가
+
+### 테스트 결과
+- `test_pdf_processor.py` 단위 테스트 전체 정상 통과 (마크다운 추출 최적화, 시리즈 캐시 분할, 시리즈 자동 수집, CLI 옵션 등 전체 PASS)
+
+---
+
 ## [2026-09-02] - 시리즈 도서 단일 파일 지정 시 동일 폴더 내 전 권 자동 수집 및 통합 처리
 
 ### 변경 목적

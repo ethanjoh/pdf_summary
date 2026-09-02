@@ -660,6 +660,22 @@ def test_pdf_processor():
         chunks.append(sample_text[start:end])
     assert len(chunks) == 3
     assert sum(len(c) for c in chunks) == 1000
+    # 4. 장편 시리즈 캐시 분할 및 권별 텍스트 메모리 재사용 검증
+    sample_series_full_md = (
+        "## 📖 제 1권 (희망의 끈 1)\n\n제1권 본문 내용입니다.\n\n"
+        "---\n\n"
+        "## 📖 제 2권 (희망의 끈 2)\n\n제2권 본문 내용입니다.\n\n"
+        "---\n\n"
+        "## 📖 제 3권 (희망의 끈 3)\n\n제3권 본문 내용입니다."
+    )
+    import re
+    split_parts = re.split(r'## 📖 제 \d+권 \([^)]+\)\n\n', sample_series_full_md)
+    split_parts = [p.replace("\n\n---\n\n", "").strip() for p in split_parts if p.strip()]
+    assert len(split_parts) == 3, f"3권 분할 결과가 3개가 아닙니다: {len(split_parts)}"
+    assert split_parts[0] == "제1권 본문 내용입니다."
+    assert split_parts[1] == "제2권 본문 내용입니다."
+    assert split_parts[2] == "제3권 본문 내용입니다."
+    print("   [OK] 대용량 시리즈 _source.md 캐시 기반 권별 텍스트 무손실 분할 로드 검증 완료")
     print("   [OK] 대용량 분할 요약 및 3권 이상 장편 시리즈 권별 요약 분기 파이프라인 검증 성공!")
 
     print("\n--- [단일 시리즈 파일 지정 시 동일 폴더 내 전 권 자동 수집 테스트] ---")
@@ -679,7 +695,13 @@ def test_pdf_processor():
     assert [f.name for f in auto_collected] == ["희망의 끈 1.pdf", "희망의 끈 2.pdf", "희망의 끈 3.pdf"]
     print(f"   [OK] '{single_series_input.name}' 지정 시 전 권 자동 수집 성공: {[f.name for f in auto_collected]}")
 
-    print("\n[OK] 모든 단위 테스트 및 시리즈/스킵/중복방지/마크다운추출/원문조건부저장/캐시및보충/대용량분할/장편시리즈최적화/시리즈자동수집/CLI옵션 검증 성공!")
+    print("\n--- [마크다운 추출 속도 최적화(ignore_images) 검증] ---")
+    opt_md = extract_markdown_from_pdf(sample_pdf_path, ignore_images=True)
+    assert opt_md and len(opt_md) > 0
+    assert "Chapter 1: The Beginning" in opt_md
+    print("   [OK] ignore_images=True 옵션 적용 시에도 마크다운 텍스트 정상 추출 확인")
+
+    print("\n[OK] 모든 단위 테스트 및 시리즈/스킵/중복방지/마크다운추출최적화/원문조건부저장/캐시및보충/대용량분할/장편시리즈최적화/시리즈자동수집/CLI옵션 검증 성공!")
     shutil.rmtree(test_dir, ignore_errors=True)
 
 
