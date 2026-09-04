@@ -405,12 +405,25 @@ def test_cli_args():
         sys.argv = ["main.py", "--file", "E:/books/sample.pdf"]
         args = parse_args()
         assert args.input_dir == "E:/books/sample.pdf", f"--file 전달 오류: {args.input_dir}"
+        assert args.single is False
         print("   [OK] --file 지정 시 단일 파일 경로 전달 확인")
 
         sys.argv = ["main.py", "-f", "E:/books/sample.pdf"]
         args = parse_args()
         assert args.input_dir == "E:/books/sample.pdf", f"-f 전달 오류: {args.input_dir}"
+        assert args.single is False
         print("   [OK] -f 지정 시 단일 파일 경로 전달 확인")
+
+        # 5. --single / --single-only 1권 단독 요약 플래그 검증
+        sys.argv = ["main.py", "-f", "E:/books/상도 1.pdf", "--single"]
+        args = parse_args()
+        assert args.single is True, f"--single 플래그 오류: {args.single}"
+        print("   [OK] --single 플래그 전달 확인 (args.single == True)")
+
+        sys.argv = ["main.py", "-f", "E:/books/상도 1.pdf", "--single-only"]
+        args = parse_args()
+        assert args.single is True, f"--single-only 플래그 오류: {args.single}"
+        print("   [OK] --single-only 플래그 전달 확인 (args.single == True)")
     finally:
         sys.argv = orig_argv
 
@@ -678,8 +691,8 @@ def test_pdf_processor():
     print("   [OK] 대용량 시리즈 _source.md 캐시 기반 권별 텍스트 무손실 분할 로드 검증 완료")
     print("   [OK] 대용량 분할 요약 및 3권 이상 장편 시리즈 권별 요약 분기 파이프라인 검증 성공!")
 
-    print("\n--- [단일 시리즈 파일 지정 시 동일 폴더 내 전 권 자동 수집 테스트] ---")
-    # 희망의 끈 2.pdf 경로로 단일 파일 지정 시뮬레이션
+    print("\n--- [단일 시리즈 파일 지정 시 동일 폴더 내 전 권 자동 수집 및 --single 단독 요약 테스트] ---")
+    # 1. 자동 수집 테스트: 희망의 끈 2.pdf 경로로 단일 파일 지정 시뮬레이션 (single=False)
     single_series_input = h2
     assert single_series_input.exists()
     b_title, v_num = parse_series_info(single_series_input.stem)
@@ -693,7 +706,30 @@ def test_pdf_processor():
     )
     assert len(auto_collected) == 3, f"전체 3권이 수집되어야 하나 {len(auto_collected)}권입니다."
     assert [f.name for f in auto_collected] == ["희망의 끈 1.pdf", "희망의 끈 2.pdf", "희망의 끈 3.pdf"]
-    print(f"   [OK] '{single_series_input.name}' 지정 시 전 권 자동 수집 성공: {[f.name for f in auto_collected]}")
+    auto_grouped = group_pdf_series(auto_collected)
+    assert len(auto_grouped) == 1
+    assert auto_grouped[0]["is_series"] is True
+    assert auto_grouped[0]["title"] == "희망의 끈"
+    print(f"   [OK] '{single_series_input.name}' 지정 시 전 권 자동 수집 성공: {[f.name for f in auto_collected]} -> title='{auto_grouped[0]['title']}', is_series={auto_grouped[0]['is_series']}")
+
+    # 2. 1권 단독 요약 테스트 (--single 지정 시뮬레이션: 시리즈 수집 생략)
+    single_only_files = [h2]
+    single_only_grouped = group_pdf_series(single_only_files)
+    assert len(single_only_grouped) == 1
+    assert single_only_grouped[0]["is_series"] is False, f"1권 단독 지정인데 시리즈로 분류됨: {single_only_grouped[0]}"
+    assert single_only_grouped[0]["title"] == "희망의 끈 2", f"1권 단독 지정인데 타이틀이 변경됨: {single_only_grouped[0]['title']}"
+    assert len(single_only_grouped[0]["files"]) == 1
+    print(f"   [OK] --single 지정 시 1권 단독 요약 정상 분기: title='{single_only_grouped[0]['title']}', is_series={single_only_grouped[0]['is_series']}")
+
+    # 3. 비시리즈 일반 단일 도서 테스트 (Principles of Marketing.pdf 시뮬레이션)
+    non_series_stem = "Principles of Marketing"
+    base_n, vol_n = parse_series_info(non_series_stem)
+    assert base_n == "Principles of Marketing"
+    assert vol_n == 0
+    non_series_grouped = group_pdf_series([single])
+    assert non_series_grouped[0]["is_series"] is False
+    assert non_series_grouped[0]["title"] == "단권도서"
+    print(f"   [OK] 일반 단일 도서 파싱 및 그룹화 정상 동작: base='{base_n}', vol={vol_n}, is_series={non_series_grouped[0]['is_series']}")
 
     print("\n--- [마크다운 추출 속도 최적화(ignore_images) 검증] ---")
     opt_md = extract_markdown_from_pdf(sample_pdf_path, ignore_images=True)

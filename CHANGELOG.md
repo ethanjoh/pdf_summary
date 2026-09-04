@@ -1,5 +1,37 @@
 # CHANGELOG
 
+## [2026-09-03] - 단일 도서 실행 NameError 수정 및 1권 단독 요약(--single) / 시리즈 요약 명확화
+
+### 변경 목적
+- `main.py`에서 `parse_series_info` import 누락으로 인해 단일 도서(`-f "Principles of Marketing.pdf"`) 실행 시 발생하던 `NameError`를 수정하고, 1권 단독 요약과 시리즈 요약의 구분을 명확히 제어할 수 있도록 개선.
+
+### 주요 결정 사항
+1. **`main.py` 내 `parse_series_info` 함수 Import 추가 (NameError 해결)**:
+   - `pdf_processor` 모듈로부터 `parse_series_info` 함수를 정상 import하여 단일 파일 실행 시 발생하던 런타임 오류 즉시 해결.
+2. **1권 단독 요약 선택 옵션(`--single` / `--single-only`) 추가 (`main.py`)**:
+   - 기존의 시리즈 파일명 지정 시 전체 권수 자동 수집 기능은 기본값으로 유지하되, 사용자가 **"해당 1권만 단독으로 요약"**하고자 할 때 `--single` 옵션을 통해 단일 파일만 독립 서평으로 요약할 수 있도록 선택권 제공.
+   - 단일 도서/1권 단독 요약/시리즈 전체 수집 상태를 콘솔 배너에 명확히 구분하여 출력.
+3. **`pdf_processor.py` 시리즈 판별 로직 정돈**:
+   - `group_pdf_series`에서 실제 파일 개수가 2개 이상(`len(files) > 1`)일 때만 `is_series = True`로 판정하고, 1개 파일만 전달된 경우 파일명의 고유 권수(stem)를 보존하여 단일 도서로 정확히 처리.
+4. **단위 테스트 추가 및 검증 (`test_pdf_processor.py`)**:
+   - 비시리즈 단일 도서(`Principles of Marketing` 등) 파싱 검증
+   - `--single` 플래그 인자 파싱 및 1권 단독 요약 분기 처리 검증
+   - 1권 단독 파일 전달 시 `is_series=False` 및 타이틀 보존 검증
+5. **문서 갱신 (`README.md`)**:
+   - 단일 도서, 시리즈 전 권 통합 요약, 1권 단독 요약(`--single`) 명령어 예시 및 옵션 표 갱신.
+
+### 수정한 파일
+- `main.py`: `parse_series_info` import 추가, `--single` 옵션 추가 및 1권 단독/시리즈 구분 배너 출력
+- `pdf_processor.py`: `group_pdf_series` 내 1개 파일 전달 시 `is_series=False` 및 단일 권수 타이틀 보존
+- `test_pdf_processor.py`: 단일 도서 파싱, `--single` 옵션, 1권 단독 요약 단위 테스트 추가
+- `README.md`: `--single` 옵션 및 1권 단독 요약 사용법 안내 추가
+- `CHANGELOG.md`: 변경 기록 추가
+
+### 테스트 결과
+- `test_pdf_processor.py` 단위 테스트 전체 정상 통과 (NameError 방지, 1권 단독 요약, 시리즈 자동 수집, CLI 옵션 등 전체 PASS)
+
+---
+
 ## [2026-09-02] - PDF 마크다운 로컬 추출 속도 최적화 및 장편 시리즈 중복 추출 제거
 
 ### 변경 목적

@@ -11,7 +11,13 @@ from tqdm import tqdm
 warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*divide by zero.*")
 warnings.filterwarnings("ignore", category=RuntimeWarning, module=".*pymupdf.*")
 
-from pdf_processor import extract_book_cover, get_pdf_metadata, group_pdf_series, extract_markdown_from_pdf
+from pdf_processor import (
+    extract_book_cover,
+    get_pdf_metadata,
+    group_pdf_series,
+    extract_markdown_from_pdf,
+    parse_series_info,
+)
 from summarizer import PDFSummarizer, QuotaExhaustedError
 
 # Windows 콘솔 utf-8 출력 설정
@@ -68,6 +74,12 @@ def parse_args():
         action="store_true",
         help="PDF에서 추출한 도서 원문 마크다운 파일({도서명}_source.md)을 함께 저장 (기본값: False)"
     )
+    parser.add_argument(
+        "--single", "--single_only", "--single-only",
+        action="store_true",
+        dest="single",
+        help="시리즈 파일명이더라도 동일 폴더 내 다른 권수를 수집하지 않고 지정한 1개 파일만 단독 요약 (기본값: False)"
+    )
     return parser.parse_args()
 
 
@@ -114,7 +126,7 @@ def main():
 
         # 파일명이 시리즈 패턴(예: '상도 1', '해리포터 2권')을 포함하는지 확인
         base_title, vol_num = parse_series_info(input_path.stem)
-        if vol_num > 0:
+        if vol_num > 0 and not args.single:
             # 같은 폴더 내 동일 시리즈명을 가진 모든 PDF 파일 자동 검색 및 수집
             series_files = sorted(
                 list({
@@ -151,6 +163,8 @@ def main():
     if is_single_file:
         if detected_series_title and len(pdf_files) > 1:
             print(f"│  📚 지정 도서(시리즈): '{detected_series_title}' (동일 폴더 내 총 {len(pdf_files)}권 자동 수집)")
+        elif args.single and vol_num > 0:
+            print(f"│  📄 지정 도서(1권 단독): {input_path.name}")
         else:
             print(f"│  📄 지정 도서(단일)  : {input_path.name}")
     else:

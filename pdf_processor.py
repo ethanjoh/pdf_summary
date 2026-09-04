@@ -184,14 +184,17 @@ def group_pdf_series(pdf_files: list[Path]) -> list[Dict[str, Any]]:
         groups[base_title].append((vol_num, pdf_file))
 
     result = []
-    for title, items in groups.items():
+    for base_title, items in groups.items():
         # vol_num 기준 정렬, 같으면 파일명 기준 정렬
         sorted_items = sorted(items, key=lambda x: (x[0], x[1].name))
         files = [item[1] for item in sorted_items]
-        is_series = len(files) > 1 or (len(files) == 1 and sorted_items[0][0] > 0)
+        is_series = len(files) > 1
+
+        # 2권 이상인 경우 시리즈 기본 도서명(base_title), 1권 단독인 경우 해당 파일명 stem을 title로 사용하여 명확히 구분
+        final_title = base_title if is_series or sorted_items[0][0] == 0 else files[0].stem
 
         result.append({
-            "title": title,
+            "title": final_title,
             "is_series": is_series,
             "file_count": len(files),
             "files": files,
